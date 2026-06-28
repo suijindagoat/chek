@@ -1,0 +1,18 @@
+{
+  "name": "clipkey-standalone-flag",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone Chromium (Puppeteer) replica of the ClipKey extension 'Flag question' AI feature. No Chrome extension is loaded.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "pm2:start": "pm2 start ecosystem.config.cjs --only clipkey-flag",
+    "pm2:stop": "pm2 delete clipkey-flag",
+    "pm2:logs": "pm2 logs clipkey-flag",
+    "pm2:status": "pm2 status"
+  },
+  "dependencies": {
+    "puppeteer-core": "^23.0.0"
+  }
+}
