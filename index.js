@@ -1,1 +1,365 @@
-import _0x1144e5 from'node:fs';import _0x1f1748 from'node:path';import _0x48ef89 from'node:crypto';import{fileURLToPath}from'node:url';import _0x17f10f from'puppeteer-core';const __dirname=_0x1f1748['dirname'](fileURLToPath(import.meta['url'])),SERVER_BASE_URLS=['https://clipkey-server.onrender.com','https://clipkey-server.vercel.app'],state={'apiKey':null,'activated':![]};function resolveChromePath(){const _0x128e7a=[_0x1f1748['join'](process['env']['LOCALAPPDATA']||'','Google\x5cChrome\x5cApplication\x5cchrome.exe'),'C:\x5cProgram\x20Files\x5cGoogle\x5cChrome\x5cApplication\x5cchrome.exe','C:\x5cProgram\x20Files\x20(x86)\x5cGoogle\x5cChrome\x5cApplication\x5cchrome.exe','C:\x5cProgram\x20Files\x5cGoogle\x5cChrome\x20Beta\x5cApplication\x5cchrome.exe','C:\x5cProgram\x20Files\x5cMicrosoft\x5cEdge\x5cApplication\x5cmsedge.exe'];for(const _0x52aaba of _0x128e7a)if(_0x52aaba&&_0x1144e5['existsSync'](_0x52aaba))return _0x52aaba;return null;}async function fetchFromServers(_0x1fd4d9,_0xb53431={}){let _0x67f620=null;for(const _0x1790fa of SERVER_BASE_URLS){try{const _0x5d962e=await fetch(_0x1790fa+_0x1fd4d9,_0xb53431);if(_0x5d962e['ok'])return _0x5d962e;_0x67f620=new Error(''+_0x1790fa+_0x1fd4d9+'\x20->\x20'+_0x5d962e['status']);}catch(_0x375b73){_0x67f620=_0x375b73;}}throw _0x67f620||new Error('All\x20servers\x20failed\x20for\x20'+_0x1fd4d9);}let DEVICE_ID=null;function ensureDeviceId(){if(DEVICE_ID)return DEVICE_ID;const _0x2e1a72=_0x1f1748['join'](__dirname,'.device-id');try{if(_0x1144e5['existsSync'](_0x2e1a72))DEVICE_ID=_0x1144e5['readFileSync'](_0x2e1a72,'utf8')['trim']();}catch{}if(!DEVICE_ID){DEVICE_ID='dev-'+_0x48ef89['randomUUID']();try{_0x1144e5['writeFileSync'](_0x2e1a72,DEVICE_ID);}catch{}}return DEVICE_ID;}function clipkeyIsActivated(){return state['activated']&&!!state['apiKey'];}async function clipkeyActivateKey(_0x38cfe0){_0x38cfe0=(_0x38cfe0||'')['trim']();if(!_0x38cfe0)return'⚠\x20Please\x20enter\x20a\x20key.';if(!_0x38cfe0['toLowerCase']()['startsWith']('bnh'))return'❌\x20Invalid\x20key\x20format\x20(must\x20start\x20with\x20bnh).';try{const _0x260262=await fetchFromServers('/api/activate',{'method':'POST','headers':{'Content-Type':'application/json'},'body':JSON['stringify']({'key':_0x38cfe0,'deviceId':ensureDeviceId()})}),_0x2c3473=await _0x260262['json']();if(_0x2c3473&&_0x2c3473['status']==='ok')return state['apiKey']=_0x2c3473['apiKey']||_0x38cfe0,state['activated']=!![],console['log']('Key\x20activated.\x20type='+(_0x2c3473['type']||'?')),'✅\x20Key\x20Activated!\x20Access\x20granted.';return'❌\x20Invalid\x20or\x20expired\x20key.';}catch(_0x50114a){return console['warn']('Activation\x20error:',_0x50114a['message']),'⚠\x20Could\x20not\x20reach\x20the\x20server.\x20Try\x20again.';}}async function clipkeyBroadcast(_0x27bf50){const _0x4effd5=String(_0x27bf50||'')['trim']();if(!_0x4effd5)return'Broadcast\x20failed.';if(!state['apiKey'])return'Broadcast\x20failed.';try{const _0x1ded9b=await fetchFromServers('/api/broadcast',{'method':'POST','headers':{'Content-Type':'application/json'},'body':JSON['stringify']({'apiKey':state['apiKey'],'message':_0x4effd5})}),_0x40eb15=await _0x1ded9b['json']()['catch'](()=>({}));if(_0x40eb15&&_0x40eb15['status']==='ok')return console['log']('Broadcast\x20sent:',_0x4effd5),'Broadcast\x20sent.';return'Broadcast\x20failed.';}catch(_0x18ae40){return console['warn']('Broadcast\x20error:',_0x18ae40['message']),'Broadcast\x20failed.';}}async function clipkeySendPaste({text:text='',pageUrl:pageUrl='',pageTitle:pageTitle=''}={}){const _0x4d2c72=String(text||'')['trim']();if(!_0x4d2c72||!state['apiKey'])return![];try{return await fetchFromServers('/api/ctrl-shift-v-paste',{'method':'POST','headers':{'Content-Type':'application/json'},'body':JSON['stringify']({'apiKey':state['apiKey'],'text':_0x4d2c72,'pageUrl':pageUrl,'pageTitle':pageTitle})}),!![];}catch(_0x1aeb07){return console['warn']('ctrl-shift-v\x20paste\x20send\x20failed:',_0x1aeb07['message']),![];}}async function uploadBlobToTmpfiles(_0x161149,_0x111dc3){try{const _0x4b2412=new FormData();_0x4b2412['append']('file',_0x161149,_0x111dc3);const _0xe3ad8b=await fetch('https://tmpfiles.org/api/v1/upload',{'method':'POST','body':_0x4b2412}),_0x59a3e3=await _0xe3ad8b['json']();let _0x19c4b0=_0x59a3e3&&_0x59a3e3['data']&&_0x59a3e3['data']['url']||_0x59a3e3&&_0x59a3e3['url'];return _0x19c4b0&&_0x19c4b0['includes']('tmpfiles.org/')&&!_0x19c4b0['includes']('/dl/')&&(_0x19c4b0=_0x19c4b0['replace']('tmpfiles.org/','tmpfiles.org/dl/')),_0x19c4b0||null;}catch(_0x47182d){return console['warn']('tmpfiles\x20upload\x20failed:',_0x47182d['message']),null;}}async function uploadDataUrl(_0x2cf30d,_0x437acf){try{const _0x1382bf=/^data:([^;]+);base64,(.*)$/s['exec'](_0x2cf30d);if(!_0x1382bf)return null;const _0x58a1c3=_0x1382bf[0x1],_0xdc3b75=Buffer['from'](_0x1382bf[0x2],'base64'),_0x512384=(_0x58a1c3['split']('/')[0x1]||'png')['split']('+')[0x0];return await uploadBlobToTmpfiles(new Blob([_0xdc3b75],{'type':_0x58a1c3}),'image_'+_0x437acf+'.'+_0x512384);}catch(_0x360744){return console['warn']('uploadDataUrl\x20failed:',_0x360744['message']),null;}}async function clipkeyGetAnswer({sentences:sentences=[],imageDatas:imageDatas=[],metadata:metadata=null}){try{if(!state['apiKey'])return'❌\x20No\x20key\x20yet\x20—\x20press\x20Ctrl+Shift+H\x20to\x20enter\x20your\x20ClipKey\x20key.';const _0x2f3a5d=state['apiKey'],_0x5094f3=Array['isArray'](imageDatas)?imageDatas['filter'](Boolean):[];if(_0x5094f3['length']){const _0x59449e=[];for(let _0xab1d91=0x0;_0xab1d91<_0x5094f3['length'];_0xab1d91++){const _0x1df195=await uploadDataUrl(_0x5094f3[_0xab1d91],_0xab1d91);if(_0x1df195)_0x59449e['push'](_0x1df195);}let _0x40045d;if(_0x59449e['length'])_0x40045d={'sentences':sentences,'apiKey':_0x2f3a5d,'metadata':metadata,'imageUrls':_0x59449e,'imageUrl':_0x59449e[0x0]};else{const _0x90b492=_0x5094f3[0x0]['split'](',')[0x1];_0x40045d={'sentences':sentences,'apiKey':_0x2f3a5d,'metadata':metadata,'imageData':_0x90b492};}try{const _0xcbe2b4=await fetchFromServers('/api/extension/upload',{'method':'POST','headers':{'Content-Type':'application/json'},'body':JSON['stringify'](_0x40045d)}),_0x34b8a3=await _0xcbe2b4['json']();if(_0x34b8a3&&_0x34b8a3['answer'])return _0x34b8a3['answer'];}catch(_0x51702d){console['warn']('Upload\x20route\x20failed,\x20falling\x20back\x20to\x20text:',_0x51702d['message']);}}const _0x42fe21=await fetchFromServers('/ai',{'method':'POST','headers':{'Content-Type':'application/json'},'body':JSON['stringify']({'text':sentences['join']('\x20'),'apiKey':_0x2f3a5d,'metadata':metadata})}),_0x3f5648=await _0x42fe21['json']();return _0x3f5648&&_0x3f5648['result']&&_0x3f5648['result']['data']||'⚠\x20No\x20answer\x20returned';}catch(_0x40ef39){return console['error']('clipkeyGetAnswer\x20error:',_0x40ef39),'⚠\x20Error\x20contacting\x20ClipKey\x20server.';}}((async()=>{const _0xfc62ad=resolveChromePath();!_0xfc62ad&&(console['error']('Could\x20not\x20auto-find\x20Chrome\x20or\x20Edge.\x20Please\x20install\x20Google\x20Chrome.'),process['exit'](0x1));const _0x3ab239=_0x1f1748['join'](__dirname,'.chrome-profile');try{_0x1144e5['rmSync'](_0x3ab239,{'recursive':!![],'force':!![]});}catch(_0x3a2cc2){console['warn']('Could\x20not\x20wipe\x20profile:',_0x3a2cc2['message']);}const _0x317298=_0x1144e5['readFileSync'](_0x1f1748['join'](__dirname,'inject.js'),'utf8');console['log']('Chrome:\x20\x20',_0xfc62ad),console['log']('Profile:\x20',_0x3ab239,'(fresh\x20each\x20run\x20—\x20no\x20saved\x20extensions/logins)'),console['log']('Key:\x20\x20\x20\x20\x20','not\x20set\x20yet\x20—\x20press\x20Ctrl+Shift+H\x20in\x20the\x20browser');const _0x45fcf4=await _0x17f10f['launch']({'executablePath':_0xfc62ad,'headless':![],'defaultViewport':null,'userDataDir':_0x3ab239,'ignoreDefaultArgs':['--disable-extensions','--enable-automation'],'args':['--no-first-run','--no-default-browser-check','--start-maximized']}),_0xaba3bf=async _0x1d8339=>{try{await _0x1d8339['exposeFunction']('clipkeyGetAnswer',clipkeyGetAnswer);}catch{}try{await _0x1d8339['exposeFunction']('clipkeyActivateKey',clipkeyActivateKey);}catch{}try{await _0x1d8339['exposeFunction']('clipkeyIsActivated',clipkeyIsActivated);}catch{}try{await _0x1d8339['exposeFunction']('clipkeySendPaste',clipkeySendPaste);}catch{}try{await _0x1d8339['exposeFunction']('clipkeyBroadcast',clipkeyBroadcast);}catch{}await _0x1d8339['evaluateOnNewDocument'](_0x317298),_0x1d8339['on']('console',_0x794ac4=>{const _0x2e5876=_0x794ac4['text']();if(_0x2e5876['startsWith']('[clipkey]'))console['log']('\x20\x20page>',_0x2e5876);});};_0x45fcf4['on']('targetcreated',async _0x3b1fda=>{if(_0x3b1fda['type']()==='page'){const _0x57e06d=await _0x3b1fda['page']();if(_0x57e06d)await _0xaba3bf(_0x57e06d);}});const [_0x352c4f]=await _0x45fcf4['pages']();await _0xaba3bf(_0x352c4f),await _0x352c4f['goto']('about:blank',{'waitUntil':'domcontentloaded'})['catch'](()=>{}),console['log']('\x0aReady.'),console['log']('\x20\x201)\x20Press\x20Ctrl+Shift+H\x20and\x20enter\x20your\x20key\x20(once\x20per\x20run).'),console['log']('\x20\x202)\x20Browse\x20to\x20your\x20quiz;\x20click\x20\x22Flag\x20question\x22\x20for\x20answers.'),console['log']('\x20\x20Click\x20\x22Question\x20N\x22\x20heading\x20=\x20toggle\x20flag\x20feature\x20on/off.'),console['log']('\x20\x20Ctrl+Shift+V\x20=\x20capture\x20clipboard\x20to\x20server\x20+\x20paste.'),console['log']('\x20\x20Ctrl+Shift+X\x20=\x20broadcast\x20\x22bc\x20<message>\x22\x20to\x20the\x20server.'),console['log']('\x20\x20Ctrl+Alt+Shift+X\x20=\x20toggle\x20flag\x20feature\x20on/off.'),console['log']('Close\x20the\x20browser\x20window\x20to\x20exit.\x0a'),_0x45fcf4['on']('disconnected',()=>process['exit'](0x0));})());
+﻿// index.js â€” launches standalone Chromium (your installed Chrome) and wires up:
+//   * Flag question -> AI answer
+//   * Ctrl+Shift+H key activation (key kept in MEMORY only -> re-entered each run)
+//   * Ctrl+Shift+V quiz-password capture -> server, then paste
+//
+// The key is NOT saved to disk: every run starts unactivated, so you can change
+// keys / handle expiry freely. The Chrome profile IS persistent so any extensions
+// you install and your site logins stick around.
+//
+// All ClipKey server calls happen HERE in Node (no CORS limits).
+// Usage:  npm install  then  npm start
+
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import childProcess from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import puppeteer from 'puppeteer-core';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const SERVER_BASE_URLS = [
+  'https://clipkey-server.onrender.com',
+  'https://clipkey-server.vercel.app',
+];
+const DEBUG_PORT = process.env.CLIPKEY_DEBUG_PORT || '0';
+const DEBUG_HOST = '127.0.0.1';
+
+// ---------- key state (in memory only; reset every run) ----------
+const state = { apiKey: null, activated: false };
+
+// ---------- chrome detection ----------
+function resolveChromePath() {
+  const candidates = [
+    path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files\\Google\\Chrome Beta\\Application\\chrome.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+  ];
+  for (const c of candidates) if (c && fs.existsSync(c)) return c;
+  return null;
+}
+
+// ---------- server calls (Node side, no CORS) ----------
+async function fetchFromServers(pathname, options = {}) {
+  let lastErr = null;
+  for (const base of SERVER_BASE_URLS) {
+    try {
+      const res = await fetch(base + pathname, options);
+      if (res.ok) return res;
+      lastErr = new Error(`${base}${pathname} -> ${res.status}`);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error('All servers failed for ' + pathname);
+}
+
+let DEVICE_ID = null;
+function ensureDeviceId() {
+  if (DEVICE_ID) return DEVICE_ID;
+  const p = path.join(__dirname, '.device-id');
+  try { if (fs.existsSync(p)) DEVICE_ID = fs.readFileSync(p, 'utf8').trim(); } catch {}
+  if (!DEVICE_ID) {
+    DEVICE_ID = 'dev-' + crypto.randomUUID();
+    try { fs.writeFileSync(p, DEVICE_ID); } catch {}
+  }
+  return DEVICE_ID;
+}
+
+// Exposed: page asks "am I activated yet?" â€” gates the Ctrl+Shift+H popup and Ctrl+Shift+V.
+function clipkeyIsActivated() {
+  return state.activated && !!state.apiKey;
+}
+
+// Exposed: receives the key typed in the Ctrl+Shift+H popup.
+// Always validates against the server's /api/activate, so any key format
+// (bnhâ€¦, bcâ€¦, etc.) is accepted as long as the server says it's valid.
+async function clipkeyActivateKey(rawKey) {
+  rawKey = (rawKey || '').trim();
+  if (!rawKey) return 'âš  Please enter a key.';
+  // Keys must follow the bnh format.
+  if (!rawKey.toLowerCase().startsWith('bnh')) return 'âŒ Invalid key format (must start with bnh).';
+  try {
+    const res = await fetchFromServers('/api/activate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: rawKey, deviceId: ensureDeviceId() }),
+    });
+    const data = await res.json();
+    if (data && data.status === 'ok') {
+      state.apiKey = data.apiKey || rawKey;
+      state.activated = true;
+      console.log('Key activated. type=' + (data.type || '?'));
+      return 'âœ… Key Activated! Access granted.';
+    }
+    return 'âŒ Invalid or expired key.';
+  } catch (e) {
+    console.warn('Activation error:', e.message);
+    return 'âš  Could not reach the server. Try again.';
+  }
+}
+
+// Exposed: Ctrl+Shift+X "bc <message>" -> POST /api/broadcast { apiKey, message }
+async function clipkeyBroadcast(message) {
+  const m = String(message || '').trim();
+  if (!m) return 'Broadcast failed.';
+  if (!state.apiKey) return 'Broadcast failed.';
+  try {
+    const res = await fetchFromServers('/api/broadcast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: state.apiKey, message: m }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (data && data.status === 'ok') {
+      console.log('Broadcast sent:', m);
+      return 'Broadcast sent.';
+    }
+    return 'Broadcast failed.';
+  } catch (e) {
+    console.warn('Broadcast error:', e.message);
+    return 'Broadcast failed.';
+  }
+}
+
+// Exposed: Ctrl+Shift+V â€” send captured clipboard text (e.g. quiz password) to the server.
+async function clipkeySendPaste({ text = '', pageUrl = '', pageTitle = '' } = {}) {
+  const t = String(text || '').trim();
+  if (!t || !state.apiKey) return false;
+  try {
+    await fetchFromServers('/api/ctrl-shift-v-paste', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: state.apiKey, text: t, pageUrl, pageTitle }),
+    });
+    return true;
+  } catch (e) {
+    console.warn('ctrl-shift-v paste send failed:', e.message);
+    return false;
+  }
+}
+
+async function uploadBlobToTmpfiles(blob, name) {
+  try {
+    const form = new FormData();
+    form.append('file', blob, name);
+    const up = await fetch('https://tmpfiles.org/api/v1/upload', { method: 'POST', body: form });
+    const j = await up.json();
+    let url = (j && j.data && j.data.url) || (j && j.url);
+    if (url && url.includes('tmpfiles.org/') && !url.includes('/dl/')) {
+      url = url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+    }
+    return url || null;
+  } catch (e) {
+    console.warn('tmpfiles upload failed:', e.message);
+    return null;
+  }
+}
+
+async function uploadDataUrl(dataUrl, i) {
+  try {
+    const m = /^data:([^;]+);base64,(.*)$/s.exec(dataUrl);
+    if (!m) return null;
+    const mime = m[1];
+    const buf = Buffer.from(m[2], 'base64');
+    const ext = (mime.split('/')[1] || 'png').split('+')[0];
+    return await uploadBlobToTmpfiles(new Blob([buf], { type: mime }), `image_${i}.${ext}`);
+  } catch (e) {
+    console.warn('uploadDataUrl failed:', e.message);
+    return null;
+  }
+}
+
+// Exposed: the page asks Node for an answer.
+async function clipkeyGetAnswer({ sentences = [], imageDatas = [], metadata = null }) {
+  try {
+    if (!state.apiKey) return 'âŒ No key yet â€” press Ctrl+Shift+H to enter your ClipKey key.';
+    const apiKey = state.apiKey;
+
+    const datas = Array.isArray(imageDatas) ? imageDatas.filter(Boolean) : [];
+
+    // Image path -> /api/extension/upload (server supports multiple via imageUrls)
+    if (datas.length) {
+      const imageUrls = [];
+      for (let i = 0; i < datas.length; i++) {
+        const u = await uploadDataUrl(datas[i], i);
+        if (u) imageUrls.push(u);
+      }
+      let body;
+      if (imageUrls.length) {
+        body = { sentences, apiKey, metadata, imageUrls, imageUrl: imageUrls[0] };
+      } else {
+        const b64 = datas[0].split(',')[1];
+        body = { sentences, apiKey, metadata, imageData: b64 };
+      }
+      try {
+        const res = await fetchFromServers('/api/extension/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const j = await res.json();
+        if (j && j.answer) return j.answer;
+      } catch (e) {
+        console.warn('Upload route failed, falling back to text:', e.message);
+      }
+    }
+
+    // Text path -> /ai
+    const res = await fetchFromServers('/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: sentences.join(' '), apiKey, metadata }),
+    });
+    const j = await res.json();
+    return (j && j.result && j.result.data) || 'âš  No answer returned';
+  } catch (e) {
+    console.error('clipkeyGetAnswer error:', e);
+    return 'âš  Error contacting ClipKey server.';
+  }
+}
+
+function getDebugPortFromProfile(userDataDir) {
+  if (DEBUG_PORT !== '0') return DEBUG_PORT;
+  try {
+    const activePortFile = path.join(userDataDir, 'DevToolsActivePort');
+    const [port] = fs.readFileSync(activePortFile, 'utf8').trim().split(/\r?\n/);
+    return port || null;
+  } catch {
+    return null;
+  }
+}
+
+async function getDebugWebSocketUrl(userDataDir) {
+  try {
+    const port = getDebugPortFromProfile(userDataDir);
+    if (!port) return null;
+    const res = await fetch(`http://${DEBUG_HOST}:${port}/json/version`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.webSocketDebuggerUrl || null;
+  } catch {
+    return null;
+  }
+}
+
+async function waitForDebugWebSocketUrl(userDataDir, timeoutMs = 15000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const url = await getDebugWebSocketUrl(userDataDir);
+    if (url) return url;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return null;
+}
+
+async function connectOrLaunchChrome({ chromePath, userDataDir }) {
+  let browserWSEndpoint = await getDebugWebSocketUrl(userDataDir);
+  if (!browserWSEndpoint) {
+    const args = [
+      `--remote-debugging-port=${DEBUG_PORT}`,
+      `--user-data-dir=${userDataDir}`,
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--start-maximized',
+      'about:blank',
+    ];
+    const child = childProcess.spawn(chromePath, args, {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: false,
+    });
+    child.unref();
+    browserWSEndpoint = await waitForDebugWebSocketUrl(userDataDir);
+  }
+  if (!browserWSEndpoint) {
+    throw new Error('Could not connect to the Chrome debugging endpoint.');
+  }
+  return puppeteer.connect({ browserWSEndpoint, defaultViewport: null });
+}
+
+// ---------- main ----------
+(async () => {
+  const chromePath = resolveChromePath();
+  if (!chromePath) {
+    console.error('Could not auto-find Chrome or Edge. Please install Google Chrome.');
+    process.exit(1);
+  }
+
+  const userDataDir = path.join(__dirname, '.chrome-profile');
+  fs.mkdirSync(userDataDir, { recursive: true });
+  const injectSource = fs.readFileSync(path.join(__dirname, 'inject.js'), 'utf8');
+
+  console.log('Chrome:  ', chromePath);
+  console.log('Profile: ', userDataDir, '(persistent profile)');
+  console.log('Key:     ', 'not set yet â€” press Ctrl+Shift+H in the browser');
+
+  const browser = await connectOrLaunchChrome({ chromePath, userDataDir });
+
+  const exposedFunctions = [
+    ['clipkeyGetAnswer', clipkeyGetAnswer],
+    ['clipkeyActivateKey', clipkeyActivateKey],
+    ['clipkeyIsActivated', clipkeyIsActivated],
+    ['clipkeySendPaste', clipkeySendPaste],
+    ['clipkeyBroadcast', clipkeyBroadcast],
+  ];
+  const wirePage = async (page) => {
+    const hadInject = await page.evaluate(() => !!window.__clipkeyFlagInit).catch(() => false);
+    for (const [name] of exposedFunctions) {
+      try { if (typeof page.removeExposedFunction === 'function') await page.removeExposedFunction(name); } catch {}
+    }
+    await page.evaluate((names) => {
+      for (const name of names) {
+        try { delete window[name]; } catch {}
+      }
+    }, exposedFunctions.map(([name]) => name)).catch(() => {});
+    for (const [name, fn] of exposedFunctions) {
+      try { await page.exposeFunction(name, fn); } catch {}
+    }
+    await page.evaluateOnNewDocument(injectSource);
+    if (!hadInject) await page.evaluate(injectSource).catch(() => {});
+    page.on('console', (msg) => {
+      const t = msg.text();
+      if (t.startsWith('[clipkey]')) console.log('  page>', t);
+    });
+
+    // Grant clipboard access for this page's origin so the Ctrl+Shift+V fallback
+    // (navigator.clipboard.readText) works even when no native paste event fires.
+    // Re-granted on every navigation since the origin can change.
+    const grantClipboard = async () => {
+      try {
+        const origin = new URL(page.url()).origin;
+        if (/^https?:/.test(origin)) {
+          await browser.defaultBrowserContext().overridePermissions(origin, ['clipboard-read', 'clipboard-write']);
+        }
+      } catch {}
+    };
+    await grantClipboard();
+    page.on('domcontentloaded', grantClipboard);
+  };
+
+  browser.on('targetcreated', async (target) => {
+    if (target.type() === 'page') {
+      const page = await target.page();
+      if (page) await wirePage(page);
+    }
+  });
+
+  const pages = await browser.pages();
+  if (!pages.length) pages.push(await browser.newPage());
+  for (const page of pages) await wirePage(page);
+
+  console.log('\nReady.');
+  console.log('  1) Press Ctrl+Shift+H and enter your key (once per run).');
+  console.log('  2) Browse to your quiz; click "Flag question" for answers.');
+  console.log('  Click "Question N" heading = toggle flag feature on/off.');
+  console.log('  Ctrl+Shift+V = capture clipboard to server + paste.');
+  console.log('  Ctrl+Shift+X = broadcast "bc <message>" to the server.');
+  console.log('  Ctrl+Alt+Shift+X = toggle flag feature on/off.');
+  console.log('Close the browser window to exit.\n');
+
+  browser.on('disconnected', () => process.exit(0));
+})();

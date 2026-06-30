@@ -1,1 +1,663 @@
-((()=>{if(window['__clipkeyFlagInit'])return;window['__clipkeyFlagInit']=!![],window['__clipkeyFlagEnabled']=!![];const _0x2ad16b='.que\x20.questionflag\x20a,\x20.que\x20.questionflag\x20.aabtn',_0x56935e='.que\x20.info\x20h3.no',_0xd48205=new WeakSet(),_0x58ffd0=new WeakMap(),_0x242519=_0x1346c0=>{if(_0x1346c0 instanceof Element)return _0x1346c0['closest'](_0x2ad16b);if(_0x1346c0&&_0x1346c0['parentElement']instanceof Element)return _0x1346c0['parentElement']['closest'](_0x2ad16b);return null;},_0x5ae524=_0x71cbca=>{const _0x54bbf8=_0x71cbca instanceof Element?_0x71cbca:_0x71cbca&&_0x71cbca['parentElement']instanceof Element?_0x71cbca['parentElement']:null,_0x59353b=_0x54bbf8?_0x54bbf8['closest'](_0x56935e):null;if(!_0x59353b||!_0x59353b['querySelector']('.qno'))return null;if(!/^Question\s+\d+/i['test']((_0x59353b['textContent']||'')['replace'](/\s+/g,'\x20')['trim']()))return null;return _0x59353b;},_0x1eef53=(_0x6c87dc,_0x4f260b,_0x1ed2c8)=>{if(!_0x6c87dc)return;if(_0x1ed2c8==null)_0x6c87dc['removeAttribute'](_0x4f260b);else _0x6c87dc['setAttribute'](_0x4f260b,_0x1ed2c8);},_0x596217=_0x3c7be4=>{if(!_0x3c7be4||_0x58ffd0['has'](_0x3c7be4))return _0x58ffd0['get'](_0x3c7be4);const _0x39d69c=_0x3c7be4['closest']('.questionflag'),_0x575360={'triggerClass':_0x3c7be4['getAttribute']('class'),'triggerTitle':_0x3c7be4['getAttribute']('title'),'triggerAriaLabel':_0x3c7be4['getAttribute']('aria-label'),'triggerAriaPressed':_0x3c7be4['getAttribute']('aria-pressed'),'triggerInnerHTML':_0x3c7be4['innerHTML'],'containerClass':_0x39d69c?_0x39d69c['getAttribute']('class'):null,'containerTitle':_0x39d69c?_0x39d69c['getAttribute']('title'):null,'hiddenInputs':_0x39d69c?Array['from'](_0x39d69c['querySelectorAll']('input'))['map'](_0xd7bec8=>({'input':_0xd7bec8,'value':_0xd7bec8['value'],'attrValue':_0xd7bec8['getAttribute']('value'),'checked':typeof _0xd7bec8['checked']==='boolean'?_0xd7bec8['checked']:null})):[]};return _0x58ffd0['set'](_0x3c7be4,_0x575360),_0x575360;},_0x317d64=(_0x77326c,_0x25faf2)=>{if(!_0x77326c||!_0x77326c['isConnected']||!_0x25faf2)return;const _0x204448=_0x77326c['closest']('.questionflag');_0x1eef53(_0x77326c,'class',_0x25faf2['triggerClass']),_0x1eef53(_0x77326c,'title',_0x25faf2['triggerTitle']),_0x1eef53(_0x77326c,'aria-label',_0x25faf2['triggerAriaLabel']),_0x1eef53(_0x77326c,'aria-pressed',_0x25faf2['triggerAriaPressed']);if(_0x77326c['innerHTML']!==_0x25faf2['triggerInnerHTML'])_0x77326c['innerHTML']=_0x25faf2['triggerInnerHTML'];_0x204448&&(_0x1eef53(_0x204448,'class',_0x25faf2['containerClass']),_0x1eef53(_0x204448,'title',_0x25faf2['containerTitle']));(_0x25faf2['hiddenInputs']||[])['forEach'](({input:_0x332237,value:_0x377ba4,attrValue:_0x240fc8,checked:_0x3b33e3})=>{if(!_0x332237||!_0x332237['isConnected'])return;_0x332237['value']=_0x377ba4;if(typeof _0x3b33e3==='boolean')_0x332237['checked']=_0x3b33e3;_0x1eef53(_0x332237,'value',_0x240fc8);});if(document['activeElement']instanceof HTMLElement)document['activeElement']['blur']();if(_0x77326c instanceof HTMLElement)_0x77326c['blur']();},_0x3e4940=_0x37fcb5=>{const _0x5d52ac=_0x58ffd0['get'](_0x37fcb5);if(!_0x5d52ac)return;_0x317d64(_0x37fcb5,_0x5d52ac),requestAnimationFrame(()=>_0x317d64(_0x37fcb5,_0x5d52ac)),setTimeout(()=>_0x317d64(_0x37fcb5,_0x5d52ac),0x0);},_0x4f7aa5=(_0x35055c,_0x42e1a0)=>{if(!_0x35055c||!_0x42e1a0)return null;const _0x3f592d=Array['from'](document['querySelectorAll']('.que')),_0x55c592=Array['from'](_0x42e1a0['querySelectorAll']('*'))['slice'](0x0,0x28)['map'](_0x2b8266=>({'tag':(_0x2b8266['tagName']||'')['toLowerCase'](),'className':typeof _0x2b8266['className']==='string'?_0x2b8266['className']['slice'](0x0,0x78):'','textSample':(_0x2b8266['textContent']||'')['replace'](/\s+/g,'\x20')['trim']()['slice'](0x0,0x78)})),_0x5854e6=JSON['stringify']({'rootClass':_0x35055c['className']||'','qtextClass':_0x42e1a0['className']||'','childTags':_0x55c592['map'](_0x12bf57=>_0x12bf57['tag']+':'+_0x12bf57['className']),'hasImage':!!_0x42e1a0['querySelector']('img'),'hasTable':!!_0x42e1a0['querySelector']('table'),'hasList':!!_0x42e1a0['querySelector']('ul,ol'),'inputCount':_0x35055c['querySelectorAll']('input,\x20textarea,\x20select')['length']}),_0x430075=window['__clipkeyQuestionStructureSignature']||null,_0x301fd3=!!_0x430075&&_0x430075!==_0x5854e6;return window['__clipkeyQuestionStructureSignature']=_0x5854e6,{'questionIndex':_0x3f592d['indexOf'](_0x35055c),'structureChanged':_0x301fd3,'signature':_0x5854e6,'pageUrl':location['href'],'pageTitle':document['title'],'questionHtml':(_0x42e1a0['innerHTML']||'')['replace'](/\s+/g,'\x20')['trim']()['slice'](0x0,0xfa0),'nodeSummary':_0x55c592};},_0x3cd6ba=_0x406539=>{const _0xdda972=document['activeElement'];if(!_0xdda972||!_0x406539)return![];if(_0xdda972['tagName']==='TEXTAREA'||_0xdda972['tagName']==='INPUT'){const _0x2e7452=_0xdda972['selectionStart']??_0xdda972['value']['length'],_0x48055d=_0xdda972['selectionEnd']??_0x2e7452;return _0xdda972['value']=_0xdda972['value']['slice'](0x0,_0x2e7452)+_0x406539+_0xdda972['value']['slice'](_0x48055d),_0xdda972['selectionStart']=_0xdda972['selectionEnd']=_0x2e7452+_0x406539['length'],_0xdda972['dispatchEvent'](new InputEvent('input',{'bubbles':!![],'inputType':'insertText','data':_0x406539})),!![];}if(_0xdda972['isContentEditable']){const _0x3c4080=window['getSelection']();if(!_0x3c4080||!_0x3c4080['rangeCount'])return![];const _0x4ad2bf=_0x3c4080['getRangeAt'](0x0);return _0x4ad2bf['deleteContents'](),_0x4ad2bf['insertNode'](document['createTextNode'](_0x406539)),_0x4ad2bf['collapse'](![]),_0xdda972['dispatchEvent'](new InputEvent('input',{'bubbles':!![],'inputType':'insertText','data':_0x406539})),!![];}try{return document['execCommand']('insertText',![],_0x406539);}catch{return![];}},_0x1ae04a=(_0x1f1a01,_0x5bbb76)=>{const _0x12e4f1=_0x1f1a01['querySelector']('textarea');if(_0x12e4f1&&_0x12e4f1['id']&&window['tinymce']){const _0xfacb2d=window['tinymce']['get'](_0x12e4f1['id']);if(_0xfacb2d){_0xfacb2d['setContent'](_0x5bbb76),_0xfacb2d['fire']('change'),_0xfacb2d['save']();return;}}const _0x43e285=_0x1f1a01['querySelector']('iframe.tox-edit-area__iframe');if(_0x43e285&&_0x43e285['contentDocument']&&_0x43e285['contentDocument']['body']){_0x43e285['contentDocument']['body']['innerHTML']=_0x5bbb76;_0x12e4f1&&(_0x12e4f1['value']=_0x5bbb76,_0x12e4f1['dispatchEvent'](new InputEvent('input',{'bubbles':!![],'inputType':'insertText','data':_0x5bbb76})));return;}if(_0x12e4f1){_0x12e4f1['value']=_0x5bbb76,_0x12e4f1['dispatchEvent'](new InputEvent('input',{'bubbles':!![],'inputType':'insertText','data':_0x5bbb76}));return;}_0x3cd6ba(_0x5bbb76);};async function _0x17ea4f(_0x2ccbe9){try{const _0x57e55f=await fetch(_0x2ccbe9,{'credentials':'include'});if(!_0x57e55f['ok'])return null;const _0x807e3a=await _0x57e55f['blob']();return await new Promise((_0xfc7f53,_0x1bd648)=>{const _0x42e0cf=new FileReader();_0x42e0cf['onloadend']=()=>_0xfc7f53(_0x42e0cf['result']),_0x42e0cf['onerror']=_0x1bd648,_0x42e0cf['readAsDataURL'](_0x807e3a);});}catch(_0x52cbfc){return null;}}async function _0xeb4c0b(_0x3fc9d9){if(_0xd48205['has'](_0x3fc9d9))return;_0xd48205['add'](_0x3fc9d9),document['documentElement']['style']['cursor']='progress';try{const _0x394fcf=_0x3fc9d9['closest']('.que');if(!_0x394fcf)return;const _0x33ac29=_0x394fcf['querySelector']('.qtext'),_0x3d10f0=_0x33ac29&&_0x33ac29['innerText']['trim']()||'';let _0x250ab0='';document['querySelectorAll']('.que.description.informationitem\x20.qtext')['forEach'](_0xcd4b9=>{_0xcd4b9['compareDocumentPosition'](_0x394fcf)&Node['DOCUMENT_POSITION_FOLLOWING']&&(_0x250ab0+=_0xcd4b9['innerText']['trim']()+'\x0a');});const _0x31b440=[];if(_0x250ab0['trim']())_0x31b440['push'](_0x250ab0['trim']());if(_0x3d10f0['trim']())_0x31b440['push'](_0x3d10f0['trim']());const _0x5131a8=[];document['querySelectorAll']('.que.description.informationitem\x20.qtext\x20img')['forEach'](_0x18116f=>{const _0x2d12ee=_0x18116f['closest']('.que');_0x2d12ee&&_0x2d12ee['compareDocumentPosition'](_0x394fcf)&Node['DOCUMENT_POSITION_FOLLOWING']&&_0x5131a8['push'](_0x18116f);});if(_0x33ac29)_0x33ac29['querySelectorAll']('img')['forEach'](_0x449d4e=>_0x5131a8['push'](_0x449d4e));const _0x295c4a=new Set(),_0x205d62=[];for(const _0x87d8ce of _0x5131a8){const _0x5873a6=_0x87d8ce['currentSrc']||_0x87d8ce['src'];if(!_0x5873a6||_0x295c4a['has'](_0x5873a6))continue;_0x295c4a['add'](_0x5873a6);const _0x2d9e7b=await _0x17ea4f(_0x5873a6);if(_0x2d9e7b)_0x205d62['push'](_0x2d9e7b);}const _0x1e303d={'questionStructure':_0x4f7aa5(_0x394fcf,_0x33ac29)},_0x32b98f=await window['clipkeyGetAnswer']({'sentences':_0x31b440,'imageDatas':_0x205d62,'metadata':_0x1e303d});_0x1ae04a(_0x394fcf,_0x32b98f||'⚠\x20No\x20answer\x20returned');}catch(_0x5f45b0){console['warn']('[clipkey]\x20flag\x20error:',_0x5f45b0&&_0x5f45b0['message']);}finally{_0x3e4940(_0x3fc9d9),_0xd48205['delete'](_0x3fc9d9),document['documentElement']['style']['cursor']='';}}['pointerdown','mousedown','mouseup']['forEach'](_0xd3eaa6=>{window['addEventListener'](_0xd3eaa6,_0x4c118e=>{if(!window['__clipkeyFlagEnabled'])return;const _0x41c42f=_0x242519(_0x4c118e['target']);if(!_0x41c42f)return;_0x596217(_0x41c42f),_0x4c118e['preventDefault'](),_0x4c118e['stopImmediatePropagation'](),_0x4c118e['stopPropagation'](),_0x3e4940(_0x41c42f);},!![]);}),window['addEventListener']('click',_0x3f4404=>{const _0x114e22=_0x5ae524(_0x3f4404['target']);if(_0x114e22){_0x3f4404['preventDefault'](),_0x3f4404['stopImmediatePropagation'](),_0x3f4404['stopPropagation'](),window['__clipkeyFlagEnabled']=!window['__clipkeyFlagEnabled'],console['log']('[clipkey]\x20flag\x20feature\x20'+(window['__clipkeyFlagEnabled']?'enabled':'disabled'));return;}if(!window['__clipkeyFlagEnabled'])return;const _0x151ee3=_0x242519(_0x3f4404['target']);if(!_0x151ee3)return;if(!_0x58ffd0['get'](_0x151ee3))_0x596217(_0x151ee3);_0x3f4404['preventDefault'](),_0x3f4404['stopImmediatePropagation'](),_0x3f4404['stopPropagation'](),_0x3e4940(_0x151ee3),_0xeb4c0b(_0x151ee3);},!![]);async function _0x5b9f56(){if(document['getElementById']('clipkey-popup-container'))return;try{if(await window['clipkeyIsActivated']())return;}catch{}const _0x168603=document['createElement']('div');_0x168603['id']='clipkey-popup-container',Object['assign'](_0x168603['style'],{'position':'fixed','top':'20%','left':'50%','transform':'translateX(-50%)','width':'60%','maxWidth':'520px','zIndex':'2147483647','padding':'14px','backgroundColor':'#fff','border':'2px\x20solid\x20#ccc','borderRadius':'8px','boxShadow':'0\x204px\x2012px\x20rgba(0,0,0,0.2)','font':'14px\x20sans-serif','color':'#111'});const _0xacfe77=document['createElement']('button');_0xacfe77['textContent']='×',Object['assign'](_0xacfe77['style'],{'position':'absolute','top':'5px','right':'8px','border':'none','background':'transparent','fontSize':'20px','cursor':'pointer','lineHeight':'1'}),_0xacfe77['addEventListener']('click',()=>_0x168603['remove']()),_0x168603['appendChild'](_0xacfe77);const _0x446935=document['createElement']('textarea');_0x446935['placeholder']='Enter\x20your\x20ClipKey\x20key…',Object['assign'](_0x446935['style'],{'width':'100%','height':'90px','fontSize':'15px','marginBottom':'8px','padding':'8px','boxSizing':'border-box'}),_0x168603['appendChild'](_0x446935);const _0x543be6=document['createElement']('button');_0x543be6['textContent']='Send\x20key',Object['assign'](_0x543be6['style'],{'padding':'8px\x2016px','fontSize':'15px','cursor':'pointer'}),_0x168603['appendChild'](_0x543be6);const _0x4497ad=document['createElement']('div');Object['assign'](_0x4497ad['style'],{'whiteSpace':'pre-wrap','marginTop':'10px','fontSize':'14px'}),_0x168603['appendChild'](_0x4497ad);async function _0x39eedb(){const _0x4688b6=_0x446935['value']['trim']();if(!_0x4688b6)return;_0x4497ad['textContent']='⏳\x20Sending\x20key\x20to\x20server…';try{const _0x21e455=await window['clipkeyActivateKey'](_0x4688b6);_0x4497ad['textContent']=_0x21e455||'Done.',typeof _0x21e455==='string'&&_0x21e455['indexOf']('✅')===0x0&&setTimeout(()=>_0x168603['remove'](),0x384);}catch(_0x2183bb){_0x4497ad['textContent']='⚠\x20Error\x20sending\x20key.';}}_0x543be6['addEventListener']('click',_0x39eedb),_0x168603['addEventListener']('keydown',_0x22a2f6=>{(_0x22a2f6['ctrlKey']||_0x22a2f6['metaKey'])&&_0x22a2f6['key']==='Enter'&&(_0x22a2f6['preventDefault'](),_0x39eedb());if(_0x22a2f6['key']==='Escape')_0x168603['remove']();}),document['body']['appendChild'](_0x168603),_0x446935['focus']();}let _0x200277=![];async function _0x3c099e(){if(_0x200277)return;try{if(!await window['clipkeyIsActivated']())return;}catch{return;}_0x200277=!![];try{let _0x3b0fd4='';try{_0x3b0fd4=await navigator['clipboard']['readText']();}catch{}if(!_0x3b0fd4||!_0x3b0fd4['trim']())return;try{await window['clipkeySendPaste']({'text':_0x3b0fd4,'pageUrl':location['href'],'pageTitle':document['title']});}catch(_0x249236){console['warn']('[clipkey]\x20paste\x20send\x20failed:',_0x249236&&_0x249236['message']);}_0x3cd6ba(_0x3b0fd4);}finally{_0x200277=![];}}const _0x448457=()=>{const _0xac2090=document['activeElement'];if(_0xac2090&&(_0xac2090['tagName']==='INPUT'||_0xac2090['tagName']==='TEXTAREA'))return String(_0xac2090['value']||'')['trim']();if(_0xac2090&&_0xac2090['isContentEditable'])return String(_0xac2090['textContent']||'')['trim']();return'';},_0x27e940=_0x79b641=>{const _0x1383a7=String(_0x79b641||'')['trim']()['match'](/^bc(?:\s+|:)([\s\S]+)$/i);return _0x1383a7?_0x1383a7[0x1]['trim']():'';};async function _0x2ea689(_0x5e243a,_0x18898c,_0x404a77){const _0x3877fc=_0x27e940(_0x5e243a);if(_0x3877fc)return _0x3877fc;if(!/^bc$/i['test'](String(_0x5e243a||'')['trim']()))return'';let _0x2340c4='';try{_0x2340c4=String(await navigator['clipboard']['readText']())['trim']();}catch{}return[_0x18898c,_0x404a77,_0x2340c4]['map'](_0x273938=>String(_0x273938||'')['trim']())['filter'](_0x56c1ad=>_0x56c1ad&&!/^bc$/i['test'](_0x56c1ad))[0x0]||'';}let _0x3f12cb=![];async function _0x5450eb(_0x8b6e6){if(_0x3f12cb)return;const _0x4a62e1=window['getSelection']&&window['getSelection']()['toString']()['trim']()||'',_0x4ae4cd=_0x448457();let _0x31f8e0=_0x4a62e1||_0x4ae4cd;if(!/^bc(\b|:)/i['test'](_0x31f8e0))try{_0x31f8e0=String(await navigator['clipboard']['readText']())['trim']();}catch{}const _0x2cfefd=await _0x2ea689(_0x31f8e0,_0x4a62e1,_0x4ae4cd);if(!_0x2cfefd)return;_0x8b6e6['preventDefault'](),_0x8b6e6['stopImmediatePropagation'](),_0x8b6e6['stopPropagation'](),_0x3f12cb=!![],document['documentElement']['style']['cursor']='progress';try{const _0x2f9eab=await window['clipkeyBroadcast'](_0x2cfefd);try{await navigator['clipboard']['writeText'](_0x2f9eab||'Broadcast\x20sent.');}catch{}}catch(_0x59f885){console['warn']('[clipkey]\x20broadcast\x20failed:',_0x59f885&&_0x59f885['message']);}finally{_0x3f12cb=![],document['documentElement']['style']['cursor']='';}}window['addEventListener']('keydown',_0x2a5625=>{const _0x17ff45=_0x2a5625['ctrlKey']||_0x2a5625['metaKey'],_0x1d1d60=(_0x2a5625['key']||'')['toLowerCase']();if(_0x17ff45&&_0x2a5625['shiftKey']&&!_0x2a5625['altKey']&&_0x1d1d60==='h'){_0x2a5625['preventDefault'](),_0x5b9f56();return;}if(_0x17ff45&&_0x2a5625['shiftKey']&&!_0x2a5625['altKey']&&_0x1d1d60==='v'){_0x2a5625['stopImmediatePropagation'](),_0x2a5625['stopPropagation'](),_0x3c099e();return;}if(_0x17ff45&&_0x2a5625['shiftKey']&&_0x2a5625['altKey']&&_0x1d1d60==='x'){_0x2a5625['preventDefault'](),window['__clipkeyFlagEnabled']=!window['__clipkeyFlagEnabled'];return;}_0x17ff45&&_0x2a5625['shiftKey']&&!_0x2a5625['altKey']&&_0x1d1d60==='x'&&_0x5450eb(_0x2a5625);},!![]);})());
+// inject.js — runs in EVERY page/frame at document_start (via evaluateOnNewDocument).
+// Standalone replica of the extension features (stealth: no on-screen UI):
+//   * Flag question -> AI answer (intercept click, keep flag unchanged, fill editor)
+//   * Ctrl+Shift+H  -> key popup (only until activation succeeds for this run)
+//   * Ctrl+Shift+V  -> capture clipboard (quiz password) to server, then paste
+//   * Ctrl+Alt+Shift+X -> toggle the flag-question feature on/off (starts ON)
+// All network calls are done in Node via the exposed window.clipkey* functions.
+(() => {
+  if (window.__clipkeyFlagInit) return;
+  window.__clipkeyFlagInit = true;
+
+  // Flag-question feature works by default; Ctrl+Alt+Shift+X toggles it.
+  window.__clipkeyFlagEnabled = true;
+
+  const FLAG_SEL = '.que .questionflag a, .que .questionflag .aabtn';
+  const QUESTION_LABEL_SEL = '.que .info h3.no';
+  const inFlight = new WeakSet();
+  const stateMap = new WeakMap();
+
+  const findTrigger = (t) => {
+    if (t instanceof Element) return t.closest(FLAG_SEL);
+    if (t && t.parentElement instanceof Element) return t.parentElement.closest(FLAG_SEL);
+    return null;
+  };
+
+  const findQuestionLabelToggle = (t) => {
+    const el = t instanceof Element ? t : t && t.parentElement instanceof Element ? t.parentElement : null;
+    const label = el ? el.closest(QUESTION_LABEL_SEL) : null;
+    if (!label || !label.querySelector('.qno')) return null;
+    if (!/^Question\s+\d+/i.test((label.textContent || '').replace(/\s+/g, ' ').trim())) return null;
+    return label;
+  };
+
+  const setAttr = (el, name, val) => {
+    if (!el) return;
+    if (val == null) el.removeAttribute(name);
+    else el.setAttribute(name, val);
+  };
+
+  // Snapshot the flag's current visual state so we can put it back after swallowing the click.
+  const snapshot = (el) => {
+    if (!el || stateMap.has(el)) return stateMap.get(el);
+    const container = el.closest('.questionflag');
+    const snap = {
+      triggerClass: el.getAttribute('class'),
+      triggerTitle: el.getAttribute('title'),
+      triggerAriaLabel: el.getAttribute('aria-label'),
+      triggerAriaPressed: el.getAttribute('aria-pressed'),
+      triggerInnerHTML: el.innerHTML,
+      containerClass: container ? container.getAttribute('class') : null,
+      containerTitle: container ? container.getAttribute('title') : null,
+      hiddenInputs: container
+        ? Array.from(container.querySelectorAll('input')).map((i) => ({
+            input: i,
+            value: i.value,
+            attrValue: i.getAttribute('value'),
+            checked: typeof i.checked === 'boolean' ? i.checked : null,
+          }))
+        : [],
+    };
+    stateMap.set(el, snap);
+    return snap;
+  };
+
+  const restore = (el, snap) => {
+    if (!el || !el.isConnected || !snap) return;
+    const container = el.closest('.questionflag');
+    setAttr(el, 'class', snap.triggerClass);
+    setAttr(el, 'title', snap.triggerTitle);
+    setAttr(el, 'aria-label', snap.triggerAriaLabel);
+    setAttr(el, 'aria-pressed', snap.triggerAriaPressed);
+    if (el.innerHTML !== snap.triggerInnerHTML) el.innerHTML = snap.triggerInnerHTML;
+    if (container) {
+      setAttr(container, 'class', snap.containerClass);
+      setAttr(container, 'title', snap.containerTitle);
+    }
+    (snap.hiddenInputs || []).forEach(({ input, value, attrValue, checked }) => {
+      if (!input || !input.isConnected) return;
+      input.value = value;
+      if (typeof checked === 'boolean') input.checked = checked;
+      setAttr(input, 'value', attrValue);
+    });
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    if (el instanceof HTMLElement) el.blur();
+  };
+
+  const restoreSoon = (el) => {
+    const snap = stateMap.get(el);
+    if (!snap) return;
+    restore(el, snap);
+    requestAnimationFrame(() => restore(el, snap));
+    setTimeout(() => restore(el, snap), 0);
+  };
+
+  const buildMeta = (que, qtext) => {
+    if (!que || !qtext) return null;
+    const all = Array.from(document.querySelectorAll('.que'));
+    const nodeSummary = Array.from(qtext.querySelectorAll('*'))
+      .slice(0, 40)
+      .map((n) => ({
+        tag: (n.tagName || '').toLowerCase(),
+        className: typeof n.className === 'string' ? n.className.slice(0, 120) : '',
+        textSample: (n.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+      }));
+    const signature = JSON.stringify({
+      rootClass: que.className || '',
+      qtextClass: qtext.className || '',
+      childTags: nodeSummary.map((n) => n.tag + ':' + n.className),
+      hasImage: !!qtext.querySelector('img'),
+      hasTable: !!qtext.querySelector('table'),
+      hasList: !!qtext.querySelector('ul,ol'),
+      inputCount: que.querySelectorAll('input, textarea, select').length,
+    });
+    const prev = window.__clipkeyQuestionStructureSignature || null;
+    const changed = !!prev && prev !== signature;
+    window.__clipkeyQuestionStructureSignature = signature;
+    return {
+      questionIndex: all.indexOf(que),
+      structureChanged: changed,
+      signature,
+      pageUrl: location.href,
+      pageTitle: document.title,
+      questionHtml: (qtext.innerHTML || '').replace(/\s+/g, ' ').trim().slice(0, 4000),
+      nodeSummary,
+    };
+  };
+
+  // Generic caret insertion (used by flag fallback and Ctrl+Shift+V paste).
+  const insertAtCaret = (text) => {
+    const active = document.activeElement;
+    if (!active || !text) return false;
+    if (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT') {
+      const start = active.selectionStart ?? active.value.length;
+      const end = active.selectionEnd ?? start;
+      active.value = active.value.slice(0, start) + text + active.value.slice(end);
+      active.selectionStart = active.selectionEnd = start + text.length;
+      active.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+      return true;
+    }
+    if (active.isContentEditable) {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return false;
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(document.createTextNode(text));
+      range.collapse(false);
+      active.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+      return true;
+    }
+    try { return document.execCommand('insertText', false, text); } catch { return false; }
+  };
+
+  const writeAnswer = (que, answer) => {
+    const ta = que.querySelector('textarea');
+
+    // 1) Preferred: the TinyMCE API (also syncs the hidden textarea that gets submitted).
+    if (ta && ta.id && window.tinymce) {
+      const ed = window.tinymce.get(ta.id);
+      if (ed) {
+        ed.setContent(answer);
+        ed.fire('change');
+        ed.save();
+        return;
+      }
+    }
+
+    // 2) TinyMCE iframe present but API not reachable: write into it and mirror to textarea.
+    const iframe = que.querySelector('iframe.tox-edit-area__iframe');
+    if (iframe && iframe.contentDocument && iframe.contentDocument.body) {
+      iframe.contentDocument.body.innerHTML = answer;
+      if (ta) {
+        ta.value = answer;
+        ta.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: answer }));
+      }
+      return;
+    }
+
+    // 3) Plain textarea.
+    if (ta) {
+      ta.value = answer;
+      ta.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: answer }));
+      return;
+    }
+
+    // 4) Anything else: insert at the caret.
+    insertAtCaret(answer);
+  };
+
+  // Fetch an image in the PAGE context (so the user's Moodle session cookies apply)
+  // and return it as a data URL. Returns null if it can't be read.
+  async function fetchImageBase64(src) {
+    try {
+      const res = await fetch(src, { credentials: 'include' });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      return await new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onloadend = () => resolve(fr.result);
+        fr.onerror = reject;
+        fr.readAsDataURL(blob);
+      });
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function handleFlag(trigger) {
+    if (inFlight.has(trigger)) return;
+    inFlight.add(trigger);
+    document.documentElement.style.cursor = 'progress';
+    try {
+      const que = trigger.closest('.que');
+      if (!que) return;
+      const qtext = que.querySelector('.qtext');
+      const qtextText = (qtext && qtext.innerText.trim()) || '';
+
+      // Preceding .description.informationitem blocks (shared stimulus text).
+      let info = '';
+      document.querySelectorAll('.que.description.informationitem .qtext').forEach((d) => {
+        if (d.compareDocumentPosition(que) & Node.DOCUMENT_POSITION_FOLLOWING) {
+          info += d.innerText.trim() + '\n';
+        }
+      });
+
+      const sentences = [];
+      if (info.trim()) sentences.push(info.trim());
+      if (qtextText.trim()) sentences.push(qtextText.trim());
+
+      // Collect images: preceding information-item blocks (shared formula sheets, etc.)
+      // first, then this question's own images.
+      const imgEls = [];
+      document.querySelectorAll('.que.description.informationitem .qtext img').forEach((im) => {
+        const owner = im.closest('.que');
+        if (owner && (owner.compareDocumentPosition(que) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+          imgEls.push(im);
+        }
+      });
+      if (qtext) qtext.querySelectorAll('img').forEach((im) => imgEls.push(im));
+
+      // Fetch each (in-page, with session) to a data URL; dedupe by source.
+      const seen = new Set();
+      const imageDatas = [];
+      for (const im of imgEls) {
+        const src = im.currentSrc || im.src;
+        if (!src || seen.has(src)) continue;
+        seen.add(src);
+        const data = await fetchImageBase64(src);
+        if (data) imageDatas.push(data);
+      }
+
+      const metadata = { questionStructure: buildMeta(que, qtext) };
+      const answer = await window.clipkeyGetAnswer({ sentences, imageDatas, metadata });
+      writeAnswer(que, answer || '⚠ No answer returned');
+    } catch (e) {
+      console.warn('[clipkey] flag error:', e && e.message);
+    } finally {
+      restoreSoon(trigger);
+      inFlight.delete(trigger);
+      document.documentElement.style.cursor = '';
+    }
+  }
+
+  // Capture-phase swallow of every pointer event on the flag, so it never toggles.
+  ['pointerdown', 'mousedown', 'mouseup'].forEach((type) => {
+    window.addEventListener(
+      type,
+      (e) => {
+        if (!window.__clipkeyFlagEnabled) return;
+        const t = findTrigger(e.target);
+        if (!t) return;
+        snapshot(t);
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        e.stopPropagation();
+        restoreSoon(t);
+      },
+      true
+    );
+  });
+
+  window.addEventListener(
+    'click',
+    (e) => {
+      const label = findQuestionLabelToggle(e.target);
+      if (label) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        e.stopPropagation();
+        window.__clipkeyFlagEnabled = !window.__clipkeyFlagEnabled;
+        console.log('[clipkey] flag feature ' + (window.__clipkeyFlagEnabled ? 'enabled' : 'disabled'));
+        return;
+      }
+
+      if (!window.__clipkeyFlagEnabled) return;
+      const t = findTrigger(e.target);
+      if (!t) return;
+      if (!stateMap.get(t)) snapshot(t);
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+      restoreSoon(t);
+      handleFlag(t);
+    },
+    true
+  );
+
+  // ---- Ctrl+Shift+H: popup to enter / activate the ClipKey key ----
+  // Only shows until activation succeeds for this run (Node tracks the state).
+  async function showKeyPopup() {
+    if (document.getElementById('clipkey-popup-container')) return;
+    try { if (await window.clipkeyIsActivated()) return; } catch {}
+
+    const box = document.createElement('div');
+    box.id = 'clipkey-popup-container';
+    Object.assign(box.style, {
+      position: 'fixed', top: '20%', left: '50%', transform: 'translateX(-50%)',
+      width: '60%', maxWidth: '520px', zIndex: '2147483647', padding: '14px',
+      backgroundColor: '#fff', border: '2px solid #ccc', borderRadius: '8px',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.2)', font: '14px sans-serif', color: '#111',
+    });
+    const close = document.createElement('button');
+    close.textContent = '×';
+    Object.assign(close.style, {
+      position: 'absolute', top: '5px', right: '8px', border: 'none',
+      background: 'transparent', fontSize: '20px', cursor: 'pointer', lineHeight: '1',
+    });
+    close.addEventListener('click', () => box.remove());
+    box.appendChild(close);
+
+    const ta = document.createElement('textarea');
+    ta.placeholder = 'Enter your ClipKey key…';
+    Object.assign(ta.style, {
+      width: '100%', height: '90px', fontSize: '15px', marginBottom: '8px',
+      padding: '8px', boxSizing: 'border-box',
+    });
+    box.appendChild(ta);
+
+    const send = document.createElement('button');
+    send.textContent = 'Send key';
+    Object.assign(send.style, { padding: '8px 16px', fontSize: '15px', cursor: 'pointer' });
+    box.appendChild(send);
+
+    const resp = document.createElement('div');
+    Object.assign(resp.style, { whiteSpace: 'pre-wrap', marginTop: '10px', fontSize: '14px' });
+    box.appendChild(resp);
+
+    async function submit() {
+      const val = ta.value.trim();
+      if (!val) return;
+      resp.textContent = '⏳ Sending key to server…';
+      try {
+        const msg = await window.clipkeyActivateKey(val);
+        resp.textContent = msg || 'Done.';
+        if (typeof msg === 'string' && msg.indexOf('✅') === 0) {
+          setTimeout(() => box.remove(), 900); // success: close and never reopen this run
+        }
+      } catch (e) {
+        resp.textContent = '⚠ Error sending key.';
+      }
+    }
+    send.addEventListener('click', submit);
+    box.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); submit(); }
+      if (e.key === 'Escape') box.remove();
+    });
+
+    document.body.appendChild(box);
+    ta.focus();
+  }
+
+  // ---- Ctrl+Shift+V: send clipboard text (e.g. quiz password) to server, then paste ----
+  // Two ways to read the clipboard, because navigator.clipboard.readText() needs a
+  // 'clipboard-read' permission this standalone Chrome doesn't grant (so it throws and
+  // nothing ever reaches the server). The native 'paste' event's clipboardData needs no
+  // permission, so it's the primary path; readText() is only a 150ms fallback.
+  let vSending = false;
+  let vPending = false;
+  let vToken = 0;
+  let vTimer = null;
+
+  function clearPendingV() {
+    vPending = false;
+    vToken += 1;
+    if (vTimer) { clearTimeout(vTimer); vTimer = null; }
+  }
+
+  async function sendPasteText(text) {
+    const t = String(text || '').trim();
+    if (!t || vSending) return;
+    vSending = true;
+    try {
+      let activated = false;
+      try { activated = await window.clipkeyIsActivated(); } catch { return; }
+      if (!activated) return;
+      await window.clipkeySendPaste({ text: t, pageUrl: location.href, pageTitle: document.title });
+    } catch (e) {
+      console.warn('[clipkey] paste send failed:', e && e.message);
+    } finally {
+      vSending = false;
+    }
+  }
+
+  async function handleVPaste(text, token) {
+    if (token !== vToken) return;
+    const t = String(text || '');
+    if (!t.trim()) { clearPendingV(); return; }
+    clearPendingV();
+    await sendPasteText(t);
+    insertAtCaret(t);
+  }
+
+  // Primary path: real paste event carries the text with no permission needed.
+  window.addEventListener(
+    'paste',
+    (e) => {
+      if (!vPending) return;
+      const text = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
+      if (!text.trim()) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+      handleVPaste(text, vToken);
+    },
+    true
+  );
+
+  // ---- Auto-capture the Moodle quiz password on "Start attempt" -> send to server/DB ----
+  // When you type the quiz password and click "Start attempt", read the password out of
+  // the preflight form and send it to /api/ctrl-shift-v-paste (same store as Ctrl+Shift+V),
+  // then let the attempt proceed. No clipboard / no manual keystroke needed.
+  const isQuizPreflightForm = (form) => {
+    if (!(form instanceof HTMLFormElement)) return false;
+    const action = form.getAttribute('action') || '';
+    return (
+      (form.id === 'mod_quiz_preflight_form' || action.includes('/mod/quiz/startattempt.php')) &&
+      !!form.querySelector('input[name="quizpassword"], #id_quizpassword')
+    );
+  };
+
+  const isCancelSubmitter = (submitter) => {
+    if (!submitter) return false;
+    return (
+      submitter.name === 'cancel' ||
+      (submitter.dataset && submitter.dataset.cancel === '1') ||
+      (submitter.getAttribute && submitter.getAttribute('data-cancel') === '1')
+    );
+  };
+
+  // Read the password robustly: direct input, focused field, passwordunmask wrapper, FormData.
+  const readQuizPasswordFromForm = (form) => {
+    if (!form) return '';
+    const direct = form.querySelector('input[name="quizpassword"], #id_quizpassword');
+    const directValue = direct && typeof direct.value === 'string' ? direct.value.trim() : '';
+    if (directValue) return directValue;
+
+    const active = document.activeElement;
+    if (
+      active instanceof HTMLInputElement &&
+      (active.name === 'quizpassword' || active.id === 'id_quizpassword' || active.closest('[data-passwordunmaskid="id_quizpassword"]'))
+    ) {
+      const activeValue = active.value.trim();
+      if (activeValue) return activeValue;
+    }
+
+    const wrapper = form.querySelector('[data-passwordunmaskid="id_quizpassword"]');
+    const wrapperInput = wrapper && wrapper.querySelector("input:not([type='hidden'])");
+    const wrapperValue = wrapperInput && typeof wrapperInput.value === 'string' ? wrapperInput.value.trim() : '';
+    if (wrapperValue) return wrapperValue;
+
+    try {
+      const fd = new FormData(form).get('quizpassword');
+      return typeof fd === 'string' ? fd.trim() : '';
+    } catch { return ''; }
+  };
+
+  const lastSubmitterByForm = new WeakMap();
+  let pwSending = false;
+  let pwSubmitting = false;
+
+  // The quiz/module name shown on the Moodle page header, e.g.
+  // "DATA MANIPULATION & VISUALISATION 600(2026S1DMV600)". Sent alongside the password
+  // so each captured password says which quiz it belongs to. Falls back to document.title.
+  const readModuleName = () => {
+    const h = document.querySelector('.page-header-headings h1, .page-header-headings h2, .page-header-headings h3');
+    const name = h ? (h.textContent || '').replace(/\s+/g, ' ').trim() : '';
+    return name || document.title || '';
+  };
+
+  async function sendQuizPassword(pw) {
+    const t = String(pw || '').trim();
+    if (!t || pwSending) return;
+    pwSending = true;
+    try {
+      let activated = false;
+      try { activated = await window.clipkeyIsActivated(); } catch { return; }
+      if (!activated) return;
+      const moduleName = readModuleName();
+      await window.clipkeySendPaste({
+        text: t,
+        pageUrl: location.href,
+        pageTitle: moduleName,
+        moduleName,
+      });
+      console.log('[clipkey] quiz password captured for: ' + moduleName);
+    } catch (e) {
+      console.warn('[clipkey] quiz password send failed:', e && e.message);
+    } finally {
+      pwSending = false;
+    }
+  }
+
+  // Re-submit the form ourselves once the password is on its way, preserving the
+  // submitter (Start attempt) name/value. form.submit() does NOT re-fire 'submit', so no loop.
+  const continueSubmit = (form, submitter) => {
+    try {
+      if (submitter && submitter.name) {
+        let hidden = form.querySelector('input[type="hidden"][data-clipkey-submitter="1"]');
+        if (!hidden) {
+          hidden = document.createElement('input');
+          hidden.type = 'hidden';
+          hidden.setAttribute('data-clipkey-submitter', '1');
+          form.appendChild(hidden);
+        }
+        hidden.name = submitter.name;
+        hidden.value = submitter.value || '';
+      }
+      form.submit();
+    } catch (e) {
+      console.warn('[clipkey] continue submit failed:', e && e.message);
+    }
+  };
+
+  // Track which control submitted (Start attempt vs Cancel).
+  window.addEventListener(
+    'click',
+    (e) => {
+      const control = e.target instanceof Element ? e.target.closest('button, input') : null;
+      if (!control) return;
+      const type = (control.getAttribute('type') || control.type || '').toLowerCase();
+      const isSubmitControl =
+        (control.tagName === 'BUTTON' && (!type || type === 'submit')) ||
+        (control.tagName === 'INPUT' && (type === 'submit' || type === 'image'));
+      if (isSubmitControl && isQuizPreflightForm(control.form)) {
+        lastSubmitterByForm.set(control.form, control);
+      }
+    },
+    true
+  );
+
+  window.addEventListener(
+    'submit',
+    (e) => {
+      const form = e.target;
+      if (!isQuizPreflightForm(form)) return;
+      const submitter = e.submitter || lastSubmitterByForm.get(form);
+      if (isCancelSubmitter(submitter)) return;   // ignore Cancel
+      if (pwSubmitting) return;                    // our own re-submit -> let it through
+      const pw = readQuizPasswordFromForm(form);
+      if (!pw) return;                             // nothing to capture -> normal submit
+      pwSubmitting = true;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      e.stopPropagation();
+      // Fire the send; Node completes the POST on its own even after we navigate. We only
+      // wait long enough (<=600ms) to be sure the call reached Node, then start the attempt.
+      const send = sendQuizPassword(pw);
+      const guard = new Promise((r) => setTimeout(r, 600));
+      Promise.race([send, guard]).finally(() => continueSubmit(form, submitter));
+    },
+    true
+  );
+
+  // ---- Ctrl+Shift+X: broadcast "bc <message>" to the server ----
+  const getActiveCommandText = () => {
+    const a = document.activeElement;
+    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA')) return String(a.value || '').trim();
+    if (a && a.isContentEditable) return String(a.textContent || '').trim();
+    return '';
+  };
+  const parseBc = (text) => {
+    const m = String(text || '').trim().match(/^bc(?:\s+|:)([\s\S]+)$/i);
+    return m ? m[1].trim() : '';
+  };
+  async function resolveBcMessage(commandText, selectedText, activeText) {
+    const parsed = parseBc(commandText);
+    if (parsed) return parsed;
+    if (!/^bc$/i.test(String(commandText || '').trim())) return '';
+    let clip = '';
+    try { clip = String(await navigator.clipboard.readText()).trim(); } catch {}
+    return [selectedText, activeText, clip]
+      .map((v) => String(v || '').trim())
+      .filter((v) => v && !/^bc$/i.test(v))[0] || '';
+  }
+  let bcBusy = false;
+  async function handleBroadcast(e) {
+    if (bcBusy) return;
+    const selected = (window.getSelection && window.getSelection().toString().trim()) || '';
+    const active = getActiveCommandText();
+    let commandText = selected || active;
+    if (!/^bc(\b|:)/i.test(commandText)) {
+      try { commandText = String(await navigator.clipboard.readText()).trim(); } catch {}
+    }
+    const message = await resolveBcMessage(commandText, selected, active);
+    if (!message) return; // not a bc command -> ignore
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    e.stopPropagation();
+    bcBusy = true;
+    document.documentElement.style.cursor = 'progress';
+    try {
+      const res = await window.clipkeyBroadcast(message);
+      try { await navigator.clipboard.writeText(res || 'Broadcast sent.'); } catch {}
+    } catch (err) {
+      console.warn('[clipkey] broadcast failed:', err && err.message);
+    } finally {
+      bcBusy = false;
+      document.documentElement.style.cursor = '';
+    }
+  }
+
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      const mod = e.ctrlKey || e.metaKey;
+      const k = (e.key || '').toLowerCase();
+      // Ctrl+Shift+H -> key popup
+      if (mod && e.shiftKey && !e.altKey && k === 'h') {
+        e.preventDefault();
+        showKeyPopup();
+        return;
+      }
+      // Ctrl+Shift+V -> capture clipboard to server + paste.
+      // Arm the pending-paste state so the native 'paste' event (primary path) is
+      // captured; a 150ms timer falls back to navigator.clipboard.readText() if no
+      // paste event fires. Do NOT preventDefault here, or the native paste won't fire.
+      if (mod && e.shiftKey && !e.altKey && k === 'v') {
+        e.stopImmediatePropagation();
+        e.stopPropagation();
+        clearPendingV();
+        vPending = true;
+        const token = vToken;
+        vTimer = setTimeout(async () => {
+          if (token !== vToken || !vPending) return;
+          let text = '';
+          try { text = await navigator.clipboard.readText(); } catch {}
+          await handleVPaste(text, token);
+        }, 150);
+        return;
+      }
+      // Ctrl+Alt+Shift+X -> toggle flag feature
+      if (mod && e.shiftKey && e.altKey && k === 'x') {
+        e.preventDefault();
+        window.__clipkeyFlagEnabled = !window.__clipkeyFlagEnabled;
+        return;
+      }
+      // Ctrl+Shift+X -> "bc <message>" broadcast
+      if (mod && e.shiftKey && !e.altKey && k === 'x') {
+        handleBroadcast(e);
+      }
+    },
+    true
+  );
+})();

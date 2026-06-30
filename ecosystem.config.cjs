@@ -13,5 +13,15 @@ module.exports = {
       windowsHide: false,
       kill_timeout: 5000,
     },
+    {
+      name: "clipkey-updater",
+      cwd: __dirname,
+      script: path.join(__dirname, "updater.js"),
+      interpreter: "node",
+      autorestart: true,
+      watch: false,
+      windowsHide: true,
+      kill_timeout: 5000,
+    },
   ],
 };
