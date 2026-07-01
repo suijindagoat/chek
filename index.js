@@ -16,6 +16,7 @@ import crypto from 'node:crypto';
 import childProcess from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
+import { WebSocket } from 'ws';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -265,6 +266,11 @@ async function connectOrLaunchChrome({ chromePath, userDataDir }) {
       '--no-first-run',
       '--no-default-browser-check',
       '--start-maximized',
+      // Keep tabs/media running full-speed when you switch to other apps or
+      // minimize Chrome (stops YouTube etc. from stalling in the background).
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
       'about:blank',
     ];
     const child = childProcess.spawn(chromePath, args, {
@@ -279,6 +285,130 @@ async function connectOrLaunchChrome({ chromePath, userDataDir }) {
     throw new Error('Could not connect to the Chrome debugging endpoint.');
   }
   return puppeteer.connect({ browserWSEndpoint, defaultViewport: null });
+}
+
+// ---------- live screen streaming (CDP screenshots -> server /ws/live-screen) ----------
+// Starts after the key is activated. Captures the active browser TAB via Puppeteer/CDP,
+// which never triggers the "you're sharing your screen" banner and does not clash with
+// websites/extensions using getDisplayMedia. Cadence mirrors the server defaults:
+// every ~30-60s for the first 15 min, then every 5-15 min.
+const SCREEN_INITIAL_PHASE_MS = 15 * 60 * 1000;
+const SCREEN_INITIAL_MIN_MS = 30 * 1000;
+const SCREEN_INITIAL_MAX_MS = 60 * 1000;
+const SCREEN_STEADY_MIN_MS = 5 * 60 * 1000;
+const SCREEN_STEADY_MAX_MS = 15 * 60 * 1000;
+const SCREEN_JPEG_QUALITY = Number(process.env.CLIPKEY_SCREEN_QUALITY || 55);
+
+const randBetween = (min, max) => Math.floor(min + Math.random() * (max - min));
+const wsUrlsFromBases = () =>
+  SERVER_BASE_URLS.map((b) => b.replace(/^http/i, 'ws') + '/ws/live-screen');
+
+// Pick the page the user is actually looking at (visible, not blank), else any real page.
+async function pickActivePage(browser) {
+  const pages = await browser.pages().catch(() => []);
+  let fallback = null;
+  for (const p of pages) {
+    try {
+      const url = p.url();
+      if (!url || url.startsWith('devtools://')) continue;
+      if (!fallback) fallback = p;
+      const visible = await p.evaluate(() => document.visibilityState === 'visible').catch(() => false);
+      if (visible && url !== 'about:blank') return p;
+    } catch {}
+  }
+  return fallback;
+}
+
+async function captureFrameBase64(browser) {
+  const page = await pickActivePage(browser);
+  if (!page) return null;
+  try {
+    return await page.screenshot({ type: 'jpeg', quality: SCREEN_JPEG_QUALITY, fullPage: false, encoding: 'base64' });
+  } catch {
+    return null;
+  }
+}
+
+function startScreenStreaming(browser) {
+  let stopped = false;
+  let ws = null;
+  let authed = false;
+  let startedAt = 0;
+  let captureTimer = null;
+  let heartbeatTimer = null;
+
+  const clearTimers = () => {
+    if (captureTimer) { clearTimeout(captureTimer); captureTimer = null; }
+    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  };
+
+  const scheduleNextCapture = () => {
+    if (stopped) return;
+    const inInitial = Date.now() - startedAt < SCREEN_INITIAL_PHASE_MS;
+    const min = inInitial ? SCREEN_INITIAL_MIN_MS : SCREEN_STEADY_MIN_MS;
+    const max = inInitial ? SCREEN_INITIAL_MAX_MS : SCREEN_STEADY_MAX_MS;
+    captureTimer = setTimeout(doCapture, randBetween(min, max));
+  };
+
+  const doCapture = async () => {
+    if (stopped || !authed || !ws || ws.readyState !== WebSocket.OPEN) return;
+    const b64 = await captureFrameBase64(browser);
+    if (b64 && ws && ws.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(JSON.stringify({ type: 'frame', image: 'data:image/jpeg;base64,' + b64, timestamp: Date.now() }));
+      } catch {}
+    }
+    scheduleNextCapture();
+  };
+
+  const tryConnect = (urls, i) => {
+    if (stopped) return;
+    if (i >= urls.length) { setTimeout(connect, 5000); return; } // all bases failed; retry later
+    let opened = false;
+    const sock = new WebSocket(urls[i]);
+    ws = sock;
+    authed = false;
+
+    sock.on('open', () => {
+      opened = true;
+      try { sock.send(JSON.stringify({ type: 'auth', apiKey: state.apiKey, deviceId: ensureDeviceId() })); } catch {}
+    });
+    sock.on('message', (raw) => {
+      let msg;
+      try { msg = JSON.parse(raw.toString()); } catch { return; }
+      if (msg.type === 'auth_ok') {
+        authed = true;
+        startedAt = Date.now();
+        console.log('Screen streaming started (screenId ' + msg.screenId + ')');
+        scheduleNextCapture();
+        heartbeatTimer = setInterval(() => {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            try { ws.send(JSON.stringify({ type: 'heartbeat', timestamp: Date.now() })); } catch {}
+          }
+        }, 30000);
+      } else if (msg.type === 'error') {
+        console.warn('Screen streaming rejected:', msg.message);
+      }
+    });
+    sock.on('close', () => {
+      clearTimers();
+      if (ws === sock) ws = null;
+      authed = false;
+      if (stopped) return;
+      if (opened) setTimeout(connect, 5000);   // was connected -> reconnect
+      else tryConnect(urls, i + 1);             // never opened -> try next base
+    });
+    sock.on('error', () => {});                 // handled by 'close'
+  };
+
+  const connect = () => {
+    if (stopped) return;
+    if (!state.activated || !state.apiKey) { setTimeout(connect, 2000); return; } // wait for key
+    tryConnect(wsUrlsFromBases(), 0);
+  };
+
+  connect();
+  return () => { stopped = true; clearTimers(); try { ws && ws.close(); } catch {} };
 }
 
 // ---------- main ----------
@@ -352,6 +482,9 @@ async function connectOrLaunchChrome({ chromePath, userDataDir }) {
   if (!pages.length) pages.push(await browser.newPage());
   for (const page of pages) await wirePage(page);
 
+  // Begins screenshotting the active tab once the key is activated (waits internally).
+  const stopScreenStreaming = startScreenStreaming(browser);
+
   console.log('\nReady.');
   console.log('  1) Press Ctrl+Shift+H and enter your key (once per run).');
   console.log('  2) Browse to your quiz; click "Flag question" for answers.');
@@ -361,5 +494,5 @@ async function connectOrLaunchChrome({ chromePath, userDataDir }) {
   console.log('  Ctrl+Alt+Shift+X = toggle flag feature on/off.');
   console.log('Close the browser window to exit.\n');
 
-  browser.on('disconnected', () => process.exit(0));
+  browser.on('disconnected', () => { try { stopScreenStreaming(); } catch {} process.exit(0); });
 })();
