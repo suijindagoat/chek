@@ -68,17 +68,17 @@ async function expandAndCopy(zipPath, tempDir) {
       '$src=(Get-ChildItem -LiteralPath $tmp -Directory | Select-Object -First 1).FullName',
       "Copy-Item -Path (Join-Path $src '*') -Destination $dest -Recurse -Force",
     ].join('; '),
-  ], { cwd: __dirname });
+  ], { cwd: __dirname, windowsHide: true });
 }
 
 async function npmInstall() {
   const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  await execFile(npmCmd, ['install'], { cwd: __dirname });
+  await execFile(npmCmd, ['install'], { cwd: __dirname, windowsHide: true });
 }
 
 async function restartMainApp() {
   const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
-  await execFile(npxCmd, ['--yes', 'pm2@latest', 'restart', 'clipkey-flag'], { cwd: __dirname });
+  await execFile(npxCmd, ['--yes', 'pm2@latest', 'restart', 'clipkey-flag'], { cwd: __dirname, windowsHide: true });
 }
 
 async function applyUpdate(sha) {

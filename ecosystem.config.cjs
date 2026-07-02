@@ -10,7 +10,7 @@ module.exports = {
       // Don't relaunch when you close the browser window (index.js exits cleanly).
       autorestart: false,
       watch: false,
-      windowsHide: false,
+      windowsHide: true,
       kill_timeout: 5000,
     },
     {
