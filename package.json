@@ -7,10 +7,10 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "pm2:start": "pm2 startOrRestart ecosystem.config.cjs",
-    "pm2:stop": "pm2 delete clipkey-flag clipkey-updater",
-    "pm2:logs": "pm2 logs clipkey-flag clipkey-updater",
-    "pm2:status": "pm2 status"
+    "pm2:start": "npx --yes pm2@latest startOrRestart ecosystem.config.cjs",
+    "pm2:stop": "npx --yes pm2@latest delete clipkey-flag clipkey-updater",
+    "pm2:logs": "npx --yes pm2@latest logs clipkey-flag clipkey-updater",
+    "pm2:status": "npx --yes pm2@latest status"
   },
   "dependencies": {
     "puppeteer-core": "^23.0.0",

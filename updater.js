@@ -77,8 +77,8 @@ async function npmInstall() {
 }
 
 async function restartMainApp() {
-  const pm2Cmd = process.platform === 'win32' ? 'pm2.cmd' : 'pm2';
-  await execFile(pm2Cmd, ['restart', 'clipkey-flag'], { cwd: __dirname });
+  const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  await execFile(npxCmd, ['--yes', 'pm2@latest', 'restart', 'clipkey-flag'], { cwd: __dirname });
 }
 
 async function applyUpdate(sha) {
