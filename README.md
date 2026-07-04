@@ -1,32 +1,3 @@
-## Run it
-
-```sh
-npm install
-npm start
-```
-
-By default the app launches one dedicated automated Chrome profile at `.chrome-profile`, using the same direct Puppeteer launch style as the older working code. The profile is wiped each run so Chrome starts clean.
-
-## Live screen timing
-
-Live screen streaming sends a frame immediately after activation, logs every sent frame, then uses these defaults:
-
-- first 10 minutes: every 4-8 seconds
-- after that: every 5-10 minutes
-
-You can override the timing before starting the app:
-
-```bat
-set CLIPKEY_SCREEN_INITIAL_MIN_MS=2000
-set CLIPKEY_SCREEN_INITIAL_MAX_MS=5000
-set CLIPKEY_SCREEN_STEADY_MIN_MS=300000
-set CLIPKEY_SCREEN_STEADY_MAX_MS=600000
-set CLIPKEY_SCREEN_WS_CONNECT_TIMEOUT_MS=8000
-set CLIPKEY_SCREEN_WS_AUTH_TIMEOUT_MS=8000
-npm start
-```
-
-This app captures the active tab through Puppeteer's Chrome connection, so it does not create Chrome's own "is sharing your screen" banner.
 
 ## Run/update with PM2
 
@@ -41,17 +12,3 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='
 ```bat
 npx --yes pm2@latest startOrRestart ecosystem.config.cjs
 ```
-
-Close the terminal and PM2 keeps it running.
-
-PM2 restarts only restart the Node controller. Chrome is launched through Puppeteer with the dedicated `.chrome-profile` profile.
-
-The PM2 config also starts `clipkey-updater`. It checks GitHub every 5 minutes. When the latest commit changes, it downloads the GitHub ZIP, overwrites/appends the files in this folder, runs `npm install`, then restarts only `clipkey-flag`. It does not delete `.chrome-profile`.
-
-The first updater run stores the current GitHub commit as its baseline. New commits after that are applied automatically.
-
-## Files it creates
-
-- `.chrome-profile/` - persistent browser profile, only when `CLIPKEY_PROFILE_MODE=app`.
-- `.device-id` - device id used for activation.
-- `.github-update-state.json` - last GitHub commit applied by the updater.
