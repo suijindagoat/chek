@@ -1,4 +1,4 @@
-﻿// index.js â€” launches standalone Chromium (your installed Chrome) and wires up:
+// index.js â€” launches standalone Chromium (your installed Chrome) and wires up:
 //   * Build with TinyMCE -> AI answer
 //   * Ctrl+Shift+H key activation (key kept in MEMORY only -> re-entered each run)
 //   * Ctrl+Shift+V quiz-password capture -> server, then paste
@@ -19,12 +19,16 @@ import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
 import { WebSocket } from 'ws';
 
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const SERVER_BASE_URLS = [
-  'https://clipkey-server.onrender.com',
+const SERVER_DIRECTORY_URL = 'https://bnhserver.onrender.com';
+const DEFAULT_SERVER_BASE_URLS = [
   'https://clipkey-server.vercel.app',
+  'https://clipkey-server.onrender.com',
 ];
+let discoveredServerBaseUrls = null;
+let serverDiscoveryPromise = null;
 const PROFILE_MODE = (process.env.CLIPKEY_PROFILE_MODE || 'default').toLowerCase();
 const DEBUG_PORT = normalizeDebugPort(process.env.CLIPKEY_DEBUG_PORT || '0');
 const ALLOW_FALLBACK_PROFILE = process.env.CLIPKEY_ALLOW_FALLBACK_PROFILE === '1';
@@ -56,9 +60,9 @@ function resolveChromePath() {
 // ---------- server calls (Node side, no CORS) ----------
 async function fetchFromServers(pathname, options = {}) {
   let lastErr = null;
-  for (const base of SERVER_BASE_URLS) {
+  for (const base of await getServerBaseUrls()) {
     try {
-      const res = await fetch(base + pathname, options);
+      const res = await fetchWithTimeout(base + pathname, options, 15000);
       if (res.ok) return res;
       lastErr = new Error(`${base}${pathname} -> ${res.status}`);
     } catch (e) {
@@ -66,6 +70,41 @@ async function fetchFromServers(pathname, options = {}) {
     }
   }
   throw lastErr || new Error('All servers failed for ' + pathname);
+}
+
+async function getServerBaseUrls() {
+  if (discoveredServerBaseUrls?.length) return discoveredServerBaseUrls;
+  if (serverDiscoveryPromise) return serverDiscoveryPromise;
+
+  serverDiscoveryPromise = fetch(SERVER_DIRECTORY_URL + '/api/servers')
+    .then(async (res) => {
+      if (!res.ok) throw new Error(`Server directory returned ${res.status}`);
+      const data = await res.json();
+      const urls = Array.isArray(data?.urls)
+        ? data.urls.filter((url) => typeof url === 'string' && /^https?:\/\//i.test(url))
+        : [];
+      discoveredServerBaseUrls = [...new Set(urls)];
+      return discoveredServerBaseUrls.length ? discoveredServerBaseUrls : DEFAULT_SERVER_BASE_URLS;
+    })
+    .catch((err) => {
+      console.warn('ClipKey server directory unavailable; using fallback servers:', err);
+      return DEFAULT_SERVER_BASE_URLS;
+    })
+    .finally(() => {
+      serverDiscoveryPromise = null;
+    });
+
+  return serverDiscoveryPromise;
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 let DEVICE_ID = null;
@@ -93,23 +132,44 @@ async function clipkeyActivateKey(rawKey) {
   if (!rawKey) return 'âš  Please enter a key.';
   // Keys must follow the bnh format.
   if (!rawKey.toLowerCase().startsWith('bnh')) return 'âŒ Invalid key format (must start with bnh).';
-  try {
-    const res = await fetchFromServers('/api/activate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: rawKey, deviceId: ensureDeviceId() }),
-    });
-    const data = await res.json();
-    if (data && data.status === 'ok') {
-      state.apiKey = data.apiKey || rawKey;
-      state.activated = true;
-      console.log('Key activated. type=' + (data.type || '?'));
-      return 'âœ… Key Activated! Access granted.';
+  const deviceId = ensureDeviceId();
+  const activateAt = async (base) => {
+    try {
+      const res = await fetchWithTimeout(base + '/api/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: rawKey, deviceId }),
+      }, 7000);
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch {}
+      if (res.ok && data && data.status === 'ok') {
+        return { base, data };
+      }
+      const serverMessage =
+        (data && (data.message || data.error || data.reason || data.status)) ||
+        text ||
+        ('HTTP ' + res.status);
+      throw new Error(`${base}/api/activate -> ${res.status}: ${String(serverMessage).slice(0, 300)}`);
+    } catch (e) {
+      throw new Error(`${base}/api/activate -> ${e.name === 'AbortError' ? 'timeout' : e.message}`);
     }
-    return 'âŒ Invalid or expired key.';
+  };
+
+  try {
+    const result = await Promise.any((await getServerBaseUrls()).map(activateAt));
+    state.apiKey = result.data.apiKey || rawKey;
+    state.activated = true;
+    console.log('Key activated via ' + result.base + '. type=' + (result.data.type || '?'));
+    return 'âœ… Key Activated! Access granted.';
   } catch (e) {
-    console.warn('Activation error:', e.message);
-    return 'âš  Could not reach the server. Try again.';
+    const messages = e && Array.isArray(e.errors) ? e.errors.map((err) => err.message) : [e.message];
+    messages.forEach((message) => console.warn('Activation failed:', message));
+    const lastMessage = messages[messages.length - 1] || 'all servers failed';
+    if (/->\s*403\b/.test(messages.join('\n'))) {
+      return 'âŒ Activation rejected by server: ' + lastMessage;
+    }
+    return 'âš  Could not activate key: ' + lastMessage;
   }
 }
 
@@ -126,6 +186,23 @@ async function clipkeySendPaste({ text = '', pageUrl = '', pageTitle = '' } = {}
     return true;
   } catch (e) {
     console.warn('ctrl-shift-v paste send failed:', e.message);
+    return false;
+  }
+}
+
+async function clipkeyBroadcast({ message = '' } = {}) {
+  const text = String(message || '').trim();
+  if (!text || !state.apiKey) return false;
+  try {
+    const res = await fetchFromServers('/api/broadcast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: state.apiKey, message: text }),
+    });
+    const data = await res.json().catch(() => ({}));
+    return res.ok && data.status === 'ok';
+  } catch (e) {
+    console.warn('broadcast failed:', e.message);
     return false;
   }
 }
@@ -169,20 +246,19 @@ async function clipkeyGetAnswer({ sentences = [], imageDatas = [], metadata = nu
 
     const datas = Array.isArray(imageDatas) ? imageDatas.filter(Boolean) : [];
 
-    // Image path -> /api/extension/upload (server supports multiple via imageUrls)
+    // Image path -> /api/extension/upload. Match the extension payload shape:
+    // one primary base64 imageData, plus imageDataList for every extracted image.
     if (datas.length) {
-      const imageUrls = [];
-      for (let i = 0; i < datas.length; i++) {
-        const u = await uploadDataUrl(datas[i], i);
-        if (u) imageUrls.push(u);
-      }
-      let body;
-      if (imageUrls.length) {
-        body = { sentences, apiKey, metadata, imageUrls, imageUrl: imageUrls[0] };
-      } else {
-        const b64 = datas[0].split(',')[1];
-        body = { sentences, apiKey, metadata, imageData: b64 };
-      }
+      const imageDataList = datas
+        .map((data) => String(data || '').includes(',') ? String(data).split(',')[1] : String(data || ''))
+        .filter(Boolean);
+      const body = {
+        sentences,
+        apiKey,
+        metadata,
+        imageData: imageDataList[0],
+        imageDataList,
+      };
       try {
         const res = await fetchFromServers('/api/extension/upload', {
           method: 'POST',
@@ -292,6 +368,27 @@ function isBrowserProcessRunning(chromePath) {
   }
 }
 
+function isProfileInUse(userDataDir) {
+  if (!userDataDir) return false;
+  const lockFile = path.join(userDataDir, 'SingletonLock');
+  try {
+    const fd = fs.openSync(lockFile, 'wx');
+    fs.closeSync(fd);
+    try { fs.unlinkSync(lockFile); } catch {}
+    return false;
+  } catch (e) {
+    return e && (e.code === 'EEXIST' || e.code === 'EPERM' || e.code === 'EBUSY');
+  }
+}
+
+function profileInUseError(userDataDir) {
+  return new Error(
+    'Chrome profile is already in use: ' + userDataDir + '\n' +
+    'Close the ClipKey/Chrome window that is using this profile, then run node index.js again.\n' +
+    'If it is running under PM2, stop it first with: npm run pm2:stop'
+  );
+}
+
 function findFreeDebugPort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -325,10 +422,12 @@ async function launchChrome({ chromePath, userDataDir, debugPort = DEBUG_PORT })
     '--no-first-run',
     '--no-default-browser-check',
     '--start-maximized',
+    '--disable-blink-features=AutomationControlled',
     // Keep tabs/media running full-speed when you switch to other apps or
     // minimize Chrome (stops YouTube etc. from stalling in the background).
     '--disable-background-timer-throttling',
     '--disable-backgrounding-occluded-windows',
+    
     '--disable-renderer-backgrounding',
     'about:blank',
   ];
@@ -347,6 +446,7 @@ function chromeLaunchArgs() {
     '--no-first-run',
     '--no-default-browser-check',
     '--start-maximized',
+    '--disable-blink-features=AutomationControlled',
     // Keep tabs/media running full-speed when you switch to other apps or
     // minimize Chrome (stops YouTube etc. from stalling in the background).
     '--disable-background-timer-throttling',
@@ -358,8 +458,7 @@ function chromeLaunchArgs() {
 
 async function launchAutomatedChrome({ chromePath, userDataDir }) {
   fs.mkdirSync(userDataDir, { recursive: true });
-  // Match the older working launcher: start a fresh automated profile directly.
-  try { fs.rmSync(userDataDir, { recursive: true, force: true }); } catch (e) { console.warn('Could not wipe profile:', e.message); }
+  // Keep the dedicated automated profile so site logins survive controller restarts.
   return puppeteer.launch({
     executablePath: chromePath,
     headless: false,
@@ -372,6 +471,12 @@ async function launchAutomatedChrome({ chromePath, userDataDir }) {
 
 async function connectOrLaunchChrome({ chromePath, userDataDir, debugUserDataDir, allowBundledFallback = false }) {
   if (userDataDir && DEBUG_PORT === '0') {
+    const existingEndpoint = await getDebugWebSocketUrl(userDataDir);
+    if (existingEndpoint) {
+      console.log('Using already-running Chrome profile debugging endpoint.');
+      return puppeteer.connect({ browserWSEndpoint: existingEndpoint, defaultViewport: null });
+    }
+    if (isProfileInUse(userDataDir)) throw profileInUseError(userDataDir);
     return launchAutomatedChrome({ chromePath, userDataDir });
   }
 
@@ -439,8 +544,8 @@ const randBetween = (min, max) => {
   const hi = Math.max(min, max);
   return Math.floor(lo + Math.random() * (hi - lo + 1));
 };
-const wsUrlsFromBases = () =>
-  SERVER_BASE_URLS.map((b) => b.replace(/^http/i, 'ws') + '/ws/live-screen');
+const wsUrlsFromBases = (bases) =>
+  bases.map((b) => b.replace(/^http/i, 'ws') + '/ws/live-screen');
 
 // Pick the page the user is actually looking at (visible, not blank), else any real page.
 async function pickActivePage(browser) {
@@ -610,7 +715,14 @@ function startScreenStreaming(browser) {
       return;
     } // wait for key
     waitingForActivationLogged = false;
-    tryConnect(wsUrlsFromBases(), 0);
+    getServerBaseUrls()
+      .then((bases) => {
+        if (!stopped) tryConnect(wsUrlsFromBases(bases), 0);
+      })
+      .catch((err) => {
+        console.warn('Screen streaming server discovery failed:', err);
+        setTimeout(connect, 5000);
+      });
   };
 
   connect();
@@ -631,7 +743,7 @@ function startScreenStreaming(browser) {
   const injectSource = fs.readFileSync(path.join(__dirname, 'inject.js'), 'utf8');
 
   console.log('Chrome:  ', chromePath);
-  console.log('Profile: ', userDataDir, '(fresh each run)');
+  console.log('Profile: ', userDataDir, '(persistent profile)');
   console.log('Debug:   ', DEBUG_PORT === '0' ? 'puppeteer launch' : DEBUG_HOST + ':' + DEBUG_PORT);
   console.log('Key:     ', 'not set yet â€” press Ctrl+Shift+H in the browser');
 
@@ -647,26 +759,121 @@ function startScreenStreaming(browser) {
     ['clipkeyActivateKey', clipkeyActivateKey],
     ['clipkeyIsActivated', clipkeyIsActivated],
     ['clipkeySendPaste', clipkeySendPaste],
+    ['clipkeyBroadcast', clipkeyBroadcast],
   ];
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const waitForMainFrame = async (page, label = 'page') => {
+    for (let i = 0; i < 40; i++) {
+      try {
+        page.mainFrame();
+        return true;
+      } catch (e) {
+        if (!/main frame too early/i.test(e.message || '')) throw e;
+        await sleep(250);
+      }
+    }
+    console.warn('Timed out waiting for main frame:', label);
+    return false;
+  };
+  const smokeTestBridge = async (page) => {
+    try {
+      return await page.evaluate(async () => {
+        if (typeof window.clipkeyIsActivated !== 'function') {
+          return { ok: false, error: 'clipkeyIsActivated is not a function' };
+        }
+        const result = await window.clipkeyIsActivated();
+        return { ok: typeof result === 'boolean' };
+      });
+    } catch (e) {
+      return { ok: false, error: e.message || String(e) };
+    }
+  };
+  const isClosedOrDetachedError = (e) =>
+    /session closed|target closed|detached frame|frame was detached|execution context was destroyed/i.test(e?.message || String(e || ''));
+  const safePageUrl = (page) => {
+    try { return page.url(); } catch { return '<closed>'; }
+  };
+
   const wirePage = async (page) => {
+    if (!page || page.isClosed?.()) return false;
+    const pageUrl = safePageUrl(page);
+    if (!(await waitForMainFrame(page, pageUrl))) return false;
+    if (page.isClosed?.()) return false;
     const hadInject = await page.evaluate(() => !!window.__clipkeyFlagInit).catch(() => false);
+    const exposedNames = exposedFunctions.map(([name]) => name);
     for (const [name] of exposedFunctions) {
-      try { if (typeof page.removeExposedFunction === 'function') await page.removeExposedFunction(name); } catch {}
+      try { if (typeof page.removeExposedFunction === 'function') await page.removeExposedFunction(name); }
+      catch (e) {
+        if (isClosedOrDetachedError(e) || page.isClosed?.()) return false;
+        if (!/does not exist/i.test(e.message || '')) console.warn('Could not remove exposed function', name + ':', e.message);
+      }
     }
     await page.evaluate((names) => {
       for (const name of names) {
         try { delete window[name]; } catch {}
+        try { Object.defineProperty(window, name, { value: undefined, configurable: true, writable: true }); } catch {}
+        try { delete window[name]; } catch {}
       }
-    }, exposedFunctions.map(([name]) => name)).catch(() => {});
+    }, exposedNames).catch(() => {});
     for (const [name, fn] of exposedFunctions) {
-      try { await page.exposeFunction(name, fn); } catch {}
+      try { await page.exposeFunction(name, fn); }
+      catch (e) {
+        if (isClosedOrDetachedError(e) || page.isClosed?.()) return false;
+        console.warn('Could not expose function', name + ':', e.message);
+      }
     }
-    await page.evaluateOnNewDocument(injectSource);
-    if (!hadInject) await page.evaluate(injectSource).catch(() => {});
+    const exposedState = await page.evaluate((names) => Object.fromEntries(
+      names.map((name) => [name, typeof window[name]])
+    ), exposedNames).catch((e) => ({ error: e.message }));
+    if (exposedState.error) {
+      if (isClosedOrDetachedError(exposedState.error) || page.isClosed?.()) return false;
+      throw new Error('ClipKey bridge check failed: ' + exposedState.error);
+    }
+    console.log('ClipKey page bridge:', JSON.stringify(exposedState), safePageUrl(page));
+    const bridgeSmoke = await smokeTestBridge(page);
+    if (!bridgeSmoke.ok) {
+      if (isClosedOrDetachedError(bridgeSmoke.error) || page.isClosed?.()) return false;
+      throw new Error('ClipKey bridge smoke failed: ' + (bridgeSmoke.error || JSON.stringify(bridgeSmoke)));
+    }
+    console.log('ClipKey bridge smoke: ok');
     page.on('console', (msg) => {
       const t = msg.text();
       if (t.startsWith('[clipkey]')) console.log('  page>', t);
     });
+    try { await page.evaluateOnNewDocument(injectSource); }
+    catch (e) {
+      if (isClosedOrDetachedError(e) || page.isClosed?.()) return false;
+      console.warn('Could not install new-document script:', e.message);
+    }
+    if (hadInject) {
+      await page.evaluate(() => { window.__clipkeyFlagInit = false; }).catch(() => {});
+      console.log('Updated ClipKey script in existing tab:', safePageUrl(page));
+    }
+    try {
+      await page.evaluate(injectSource);
+      console.log('ClipKey injected:', safePageUrl(page));
+    } catch (e) {
+      if (isClosedOrDetachedError(e) || page.isClosed?.()) return false;
+      throw e;
+    }
+
+    // TinyMCE answer editors live in same-origin child frames. Inject there
+    // directly as well, so the command listener is installed in the frame's
+    // own realm even when Moodle creates/replaces the iframe after page load.
+    const injectChildFrame = async (frame) => {
+      if (!frame || frame === page.mainFrame()) return;
+      try {
+        await frame.evaluate(injectSource);
+      } catch (e) {
+        if (!isClosedOrDetachedError(e) && !page.isClosed?.() && !/execution context|cross-origin|detached/i.test(e.message || '')) {
+          console.warn('Could not inject ClipKey into child frame:', e.message);
+        }
+      }
+    };
+    for (const frame of page.frames()) await injectChildFrame(frame);
+    page.on('frameattached', (frame) => { void injectChildFrame(frame); });
+    page.on('framenavigated', (frame) => { void injectChildFrame(frame); });
 
     // Grant clipboard access for this page's origin so the Ctrl+Shift+V fallback
     // (navigator.clipboard.readText) works even when no native paste event fires.
@@ -681,31 +888,45 @@ function startScreenStreaming(browser) {
     };
     await grantClipboard();
     page.on('domcontentloaded', grantClipboard);
+    return true;
   };
 
-  browser.on('targetcreated', async (target) => {
-    if (target.type() === 'page') {
-      const page = await target.page();
-      if (page) await wirePage(page);
+  const wireNewPageTargets = () => browser.on('targetcreated', async (target) => {
+    try {
+      if (target.type() === 'page') {
+        const page = await target.page();
+        if (page) await wirePage(page);
+      }
+    } catch (e) {
+      console.warn('Could not wire new page:', e.message);
     }
   });
 
-  const pages = await browser.pages();
-  if (!pages.length) pages.push(await browser.newPage());
-  for (const page of pages) await wirePage(page);
+  const wireExistingPages = async () => {
+    const pages = await browser.pages();
+    if (!pages.length) pages.push(await browser.newPage());
+    for (const page of pages) await wirePage(page);
+  };
+
+  await wireExistingPages();
+  wireNewPageTargets();
 
   // Begins screenshotting the active tab once the key is activated (waits internally).
   const stopScreenStreaming = startScreenStreaming(browser);
 
   console.log('\nReady.');
   console.log('  1) Press Ctrl+Shift+H and enter your key (once per run).');
-  console.log('  2) Browse to your quiz; click "Build with TinyMCE" for answers.');
+  console.log('  2) Browse to your quiz; use the TinyMCE branding click to answer.');
   console.log('  Ctrl+Z = undo (answer peels word-by-word; manual edits too); Ctrl+Y = redo.');
-  console.log('  Click "Question N" heading = toggle answer trigger on/off.');
-  console.log('  Ctrl+Shift+V = capture clipboard to server + paste.');
-  console.log('  Ctrl+Shift+X = broadcast "bc <message>" to the server.');
-  console.log('  Ctrl+Alt+Shift+X = toggle answer trigger on/off.');
+  console.log('  TinyMCE click answering starts ON. Ctrl+Alt+Shift+X toggles it.');
+  console.log('  Extra helpers start OFF. Ctrl+Shift+C toggles Ctrl+Shift+V, Ctrl+Shift+X, left-click capture.');
+  console.log('  When enabled: Ctrl+Shift+V = capture clipboard to server + paste.');
+  console.log('  When enabled: Ctrl+Shift+X = activate key, broadcast "bc <message>", or answer selected/buffered text.');
+  console.log('  When enabled: click "Question N" heading = toggle TinyMCE answer trigger on/off.');
   console.log('Close the browser window to exit.\n');
 
-  browser.on('disconnected', () => { try { stopScreenStreaming(); } catch {} process.exit(0); });
+  browser.on('disconnected', () => {
+    try { stopScreenStreaming(); } catch {}
+    process.exit(0);
+  });
 })();

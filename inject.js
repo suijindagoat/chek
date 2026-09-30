@@ -1,29 +1,127 @@
 // inject.js — runs in EVERY page/frame at document_start (via evaluateOnNewDocument).
 // Standalone replica of the extension features (stealth: no on-screen UI):
-//   * TinyMCE branding -> AI answer (intercept click, fill editor)
-//   * Ctrl+Z        -> undo (overrides built-in): dumped answer peels off one word
+//   * TinyMCE branding click -> AI answer
+//   * Ctrl+Z        -> undo (overrides built-in): dumped answer peels off one character
 //                      at a time (back to front); manual edits undo as their own steps
 //   * Ctrl+Y / Ctrl+Shift+Z -> redo: step forward through the same timeline
 //   * Ctrl+Shift+H  -> key popup (only until activation succeeds for this run)
-//   * Ctrl+Shift+V  -> capture clipboard (quiz password) to server, then paste
-//   * Ctrl+Alt+Shift+X -> toggle the answer trigger on/off (starts ON)
+//   * Ctrl+Shift+C  -> toggle extra helpers: Ctrl+Shift+V, Ctrl+Shift+X, left-click capture
+//   * Ctrl+Alt+Shift+X -> toggle the optional TinyMCE answer trigger (starts ON)
 // All network calls are done in Node via the exposed window.clipkey* functions.
+// --- anti-automation patches ---
+(() => {
+  if (window.__clipkeyStealth) return;
+  window.__clipkeyStealth = true;
+
+  const safelyDefine = (target, prop, descriptor) => {
+    if (!target) return false;
+    try {
+      const existing = Object.getOwnPropertyDescriptor(target, prop);
+      if (existing && existing.configurable === false) return false;
+      Object.defineProperty(target, prop, descriptor);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const safelyDelete = (target, prop) => {
+    if (!target) return false;
+    try {
+      const existing = Object.getOwnPropertyDescriptor(target, prop);
+      if (existing && existing.configurable === false) return false;
+      return delete target[prop];
+    } catch {
+      return false;
+    }
+  };
+
+  const hideWebdriver = () => {
+    const descriptor = { get: () => undefined, configurable: true };
+    const removedFromProto = safelyDelete(Navigator.prototype, 'webdriver');
+    const removedFromNavigator = safelyDelete(window.navigator, 'webdriver');
+    if (!removedFromProto) safelyDefine(Navigator.prototype, 'webdriver', descriptor);
+    if (!removedFromNavigator) safelyDefine(window.navigator, 'webdriver', descriptor);
+  };
+
+  const scrubAutomationProps = (target) => {
+    if (!target) return;
+    for (const prop of Object.getOwnPropertyNames(target)) {
+      if (!/^(?:\$?cdc_|__webdriver|webdriver|domAutomation)/i.test(prop)) continue;
+      try { delete target[prop]; } catch {}
+    }
+  };
+
+  hideWebdriver();
+  scrubAutomationProps(window);
+  scrubAutomationProps(document);
+})();
 (() => {
   if (window.__clipkeyFlagInit) return;
   window.__clipkeyFlagInit = true;
 
-  // Answer trigger works by default; Ctrl+Alt+Shift+X toggles it.
+  // TinyMCE clicks are the only answer trigger. Extra helpers remain opt-in so
+  // accidental actions do not send unrelated requests.
   window.__clipkeyFlagEnabled = true;
+  window.__clipkeyExtraShortcutsEnabled = false;
+  let sentenceBuffer = [];
+  let imageDataBuffer = [];
+  let clickBufferTimer = null;
 
   const TINYMCE_BRANDING_SEL = '.que .tox-statusbar__branding a[href*="tiny.cloud/powered-by-tiny"], .que a[aria-label="Build with TinyMCE"]';
   const ANSWER_TRIGGER_SEL = TINYMCE_BRANDING_SEL;
   const QUESTION_LABEL_SEL = '.que .info h3.no';
   const inFlight = new WeakSet();
+  const sharedInFlight = window.__clipkeySharedAnswerInFlight || (window.__clipkeySharedAnswerInFlight = new WeakSet());
+  const activeAnswerRuns = window.__clipkeyActiveAnswerRuns || (window.__clipkeyActiveAnswerRuns = new WeakMap());
   const stateMap = new WeakMap();
 
+  const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const nodeText = (el) => String((el && (el.innerText || el.textContent)) || '').trim();
+  const isTextarea = (el) => el && String(el.tagName || '').toLowerCase() === 'textarea';
+
+  const readMarkAllocation = (question) => {
+    const source = nodeText(question).replace(/\s+/g, ' ');
+    const markedOutOf = source.match(/\bmarked\s+out\s+of\s+([0-9]+(?:[.,][0-9]+)?)/i);
+    if (markedOutOf) return `${markedOutOf[1]} marks`;
+    const points = source.match(/\b([0-9]+(?:[.,][0-9]+)?)\s*(?:marks?|points?)\b/i);
+    return points ? `${points[1]} ${/point/i.test(points[0]) ? 'points' : 'marks'}` : '';
+  };
+
+  const formatCapturedQuestionText = (question, qtext) => {
+    const text = nodeText(qtext).replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    const markAllocation = readMarkAllocation(question);
+    return [
+      markAllocation ? `Mark allocation: ${markAllocation}.` : '',
+      `Question: ${text}`
+    ].filter(Boolean).join('\n');
+  };
+
+  const isTinyMceBuildControl = (el) => {
+    if (!(el instanceof Element)) return false;
+    const href = norm(el.getAttribute('href'));
+    const aria = norm(el.getAttribute('aria-label'));
+    const title = norm(el.getAttribute('title'));
+    const text = norm(el.textContent);
+    return (
+      href.includes('tiny.cloud/powered-by-tiny') ||
+      aria.includes('build with tinymce') ||
+      title.includes('build with tinymce') ||
+      text.includes('build with tinymce') ||
+      (el.closest('.tox-statusbar__branding') && /tiny\s*mce|tinymce|tiny\.cloud/.test(`${text} ${aria} ${title} ${href}`))
+    );
+  };
+
   const findTrigger = (t) => {
-    if (t instanceof Element) return t.closest(ANSWER_TRIGGER_SEL);
-    if (t && t.parentElement instanceof Element) return t.parentElement.closest(ANSWER_TRIGGER_SEL);
+    const start = t instanceof Element ? t : t && t.parentElement instanceof Element ? t.parentElement : null;
+    if (!start) return null;
+    const exact = start.closest(ANSWER_TRIGGER_SEL);
+    if (exact) return exact;
+    for (let el = start; el && el instanceof Element; el = el.parentElement) {
+      if (isTinyMceBuildControl(el)) return el;
+      if (findQuestionRoot(el) === el) break;
+    }
     return null;
   };
 
@@ -33,6 +131,93 @@
     if (!label || !label.querySelector('.qno')) return null;
     if (!/^Question\s+\d+/i.test((label.textContent || '').replace(/\s+/g, ' ').trim())) return null;
     return label;
+  };
+
+  const EDITOR_SEL = [
+    'textarea[data-fieldtype="editor"]',
+    'textarea[id$="_answer_id"]',
+    'textarea[name$="_answer"]',
+    '.tox-tinymce',
+    'iframe.tox-edit-area__iframe',
+    '[contenteditable="true"]',
+  ].join(', ');
+
+  const PROMPT_SEL = [
+    '.qtext',
+    '[class*="qtext"]',
+    '[class*="questiontext"]',
+    '[id*="questiontext"]',
+  ].join(', ');
+
+  const QUESTION_ROOT_SEL = '.que, [id^="question-"], [class*="question"]';
+
+  const hasEditor = (el) => el instanceof Element && !!el.querySelector(EDITOR_SEL);
+
+  const hasQuestionSignal = (el) => {
+    if (!(el instanceof Element)) return false;
+    if (el.matches('.que, [id^="question-"]')) return true;
+    if (el.querySelector(PROMPT_SEL)) return true;
+    if (el.querySelector('textarea[name*="_answer"], textarea[id*="_answer"]')) return true;
+    return /\b(question|answer text)\s*\d*\b/i.test((el.textContent || '').replace(/\s+/g, ' ').slice(0, 500));
+  };
+
+  const findQuestionRoot = (start) => {
+    const el = start instanceof Element ? start : start && start.parentElement instanceof Element ? start.parentElement : null;
+    if (!el) return null;
+    const direct = el.closest('.que, [id^="question-"]');
+    if (direct) return direct;
+    const structural = el.closest(QUESTION_ROOT_SEL);
+    if (structural && hasEditor(structural) && hasQuestionSignal(structural)) return structural;
+    for (let cur = el; cur && cur instanceof Element && cur !== document.body; cur = cur.parentElement) {
+      if (hasEditor(cur) && hasQuestionSignal(cur)) return cur;
+      if (cur.tagName === 'FORM') break;
+    }
+    const editor = el.closest('.tox-tinymce, .qtype_essay_editor, .qtype_essay_response, .answer, .ablock');
+    if (editor) {
+      for (let cur = editor.parentElement; cur && cur instanceof Element && cur !== document.body; cur = cur.parentElement) {
+        if (hasEditor(cur) && hasQuestionSignal(cur)) return cur;
+        if (cur.tagName === 'FORM') break;
+      }
+    }
+    return null;
+  };
+
+  const findPromptRoot = (que) => {
+    if (!(que instanceof Element)) return null;
+    const exact = que.querySelector(PROMPT_SEL);
+    if (exact) return exact;
+    const formulation = que.querySelector('.formulation, [class*="formulation"], [class*="content"]');
+    const source = formulation || que;
+    const clone = source.cloneNode(true);
+    clone.querySelectorAll([
+      '.ablock',
+      '.answer',
+      '.attachments',
+      '.info',
+      '.questionflag',
+      '.tox-tinymce',
+      '.tox-silver-sink',
+      'textarea',
+      'iframe',
+      'input',
+      'button',
+      'script',
+      'style',
+    ].join(', ')).forEach((n) => n.remove());
+    return clone;
+  };
+
+  const findInfoBlocksBefore = (que) => {
+    if (!(que instanceof Element)) return [];
+    const legacy = Array.from(document.querySelectorAll('.que.description.informationitem .qtext'));
+    if (legacy.length) {
+      return legacy.filter((d) => d.compareDocumentPosition(que) & Node.DOCUMENT_POSITION_FOLLOWING);
+    }
+    const roots = Array.from(document.querySelectorAll('.que, [id^="question-"], [class*="informationitem"], [class*="description"]'));
+    return roots
+      .filter((root) => root !== que && (root.compareDocumentPosition(que) & Node.DOCUMENT_POSITION_FOLLOWING))
+      .filter((root) => /information|description/i.test(`${root.className || ''} ${root.textContent || ''}`))
+      .map((root) => findPromptRoot(root) || root);
   };
 
   const setAttr = (el, name, val) => {
@@ -98,7 +283,7 @@
 
   const buildMeta = (que, qtext) => {
     if (!que || !qtext) return null;
-    const all = Array.from(document.querySelectorAll('.que'));
+    const all = Array.from(document.querySelectorAll('.que, [id^="question-"]'));
     const nodeSummary = Array.from(qtext.querySelectorAll('*'))
       .slice(0, 40)
       .map((n) => ({
@@ -129,6 +314,12 @@
     };
   };
 
+  const findEditorTextarea = (que) => (
+    que && que.querySelector(
+      'textarea[data-fieldtype="editor"], textarea[id$="_answer_id"], textarea[name$="_answer"], textarea'
+    )
+  );
+
   // Generic caret insertion (used by flag fallback and Ctrl+Shift+V paste).
   const insertAtCaret = (text) => {
     const active = document.activeElement;
@@ -155,15 +346,16 @@
   };
 
   // Low-level: put a string of content into a question's editor. Used both by
-  // the initial answer dump and by the word-by-word undo/redo re-renders.
+  // the initial answer dump and by the character-by-character undo/redo re-renders.
   const setEditorContent = (que, answer) => {
-    const ta = que.querySelector('textarea');
+    const ta = findEditorTextarea(que);
 
     // 1) Preferred: the TinyMCE API (also syncs the hidden textarea that gets submitted).
     if (ta && ta.id && window.tinymce) {
       const ed = window.tinymce.get(ta.id);
       if (ed) {
         ed.setContent(answer);
+        ed.fire('input');
         ed.fire('change');
         ed.save();
         return;
@@ -171,12 +363,22 @@
     }
 
     // 2) TinyMCE iframe present but API not reachable: write into it and mirror to textarea.
-    const iframe = que.querySelector('iframe.tox-edit-area__iframe');
+    const iframe = que.querySelector('iframe.tox-edit-area__iframe, iframe[id$="_ifr"]');
     if (iframe && iframe.contentDocument && iframe.contentDocument.body) {
       iframe.contentDocument.body.innerHTML = answer;
+      iframe.contentDocument.body.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        inputType: 'insertHTML',
+        data: answer,
+      }));
       if (ta) {
         ta.value = answer;
-        ta.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: answer }));
+        ta.dispatchEvent(new InputEvent('input', {
+          bubbles: true,
+          inputType: 'insertHTML',
+          data: answer,
+        }));
+        ta.dispatchEvent(new Event('change', { bubbles: true }));
       }
       return;
     }
@@ -184,7 +386,12 @@
     // 3) Plain textarea.
     if (ta) {
       ta.value = answer;
-      ta.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: answer }));
+      ta.dispatchEvent(new InputEvent('input', {
+        bubbles: true,
+        inputType: 'insertHTML',
+        data: answer,
+      }));
+      ta.dispatchEvent(new Event('change', { bubbles: true }));
       return;
     }
 
@@ -195,25 +402,92 @@
   // ---- Unified undo / redo (dumped answer + manual edits) ----------------
   // Per question editor we keep a linear stack of content snapshots and a
   // position pointer. Ctrl+Z steps back one snapshot, Ctrl+Y steps forward.
-  //  * A flagged answer is pushed as one snapshot per word, so undo peels it
-  //    off back-to-front and redo re-adds it word by word.
+  //  * A generated answer is pushed as one snapshot per visible character, so undo peels it
+  //    off back-to-front and redo re-adds it character by character.
   //  * Manual typing is captured (debounced) as its own snapshots.
   // Both live in the same timeline, so Ctrl+Z / Ctrl+Y walk through whatever
   // happened most recently, no matter which produced it.
   const editorState = new WeakMap(); // que -> { stack, pos, watched, pendingTimer }
   let lastAnsweredQue = null;
   let applyingProgrammatic = false;
+  let applyingProgrammaticTimer = null;
 
-  const tokenizeWords = (text) => String(text || '').match(/\S+\s*/g) || [];
+  const looksLikeHtml = (text) => /<\/?[a-z][\s\S]*>/i.test(String(text || ''));
+
+  const trimDomToVisibleChars = (node, maxChars, state) => {
+    for (const child of Array.from(node.childNodes)) {
+      if (state.count >= maxChars) {
+        child.remove();
+        continue;
+      }
+      if (child.nodeType === Node.TEXT_NODE) {
+        const chars = Array.from(child.nodeValue || '');
+        const keep = Math.max(0, Math.min(chars.length, maxChars - state.count));
+        child.nodeValue = chars.slice(0, keep).join('');
+        state.count += keep;
+        if (keep < chars.length) {
+          let next = child.nextSibling;
+          while (next) {
+            const remove = next;
+            next = next.nextSibling;
+            remove.remove();
+          }
+        }
+        continue;
+      }
+      trimDomToVisibleChars(child, maxChars, state);
+      if (state.count >= maxChars) {
+        let next = child.nextSibling;
+        while (next) {
+          const remove = next;
+          next = next.nextSibling;
+          remove.remove();
+        }
+      }
+    }
+  };
+
+  const buildAnswerSnapshots = (answer) => {
+    const text = String(answer || '');
+    if (!looksLikeHtml(text)) return Array.from(text);
+    const template = document.createElement('template');
+    template.innerHTML = text;
+    const visible = Array.from(template.content.textContent || '');
+    if (!visible.length) return Array.from(text);
+    const snapshots = [];
+    for (let i = 1; i <= visible.length; i++) {
+      const clone = template.content.cloneNode(true);
+      trimDomToVisibleChars(clone, i, { count: 0 });
+      snapshots.push(Array.from(clone.childNodes).map((node) => {
+        const holder = document.createElement('div');
+        holder.appendChild(node.cloneNode(true));
+        return holder.innerHTML;
+      }).join(''));
+    }
+    return snapshots;
+  };
+
+  const normalizeHistoryContent = (content) => {
+    const s = String(content || '')
+      .replace(/\sdata-mce-bogus="[^"]*"/gi, '')
+      .replace(/&nbsp;/gi, ' ')
+      .trim();
+    if (!s || /^<p>\s*(?:<br\s*\/?>)?\s*<\/p>$/i.test(s)) return '';
+    return s;
+  };
+
+  const sameHistoryContent = (a, b) => (
+    a === b || normalizeHistoryContent(a) === normalizeHistoryContent(b)
+  );
 
   // Read the editor's current content, same source order as setEditorContent.
   const getEditorContent = (que) => {
-    const ta = que.querySelector('textarea');
+    const ta = findEditorTextarea(que);
     if (ta && ta.id && window.tinymce) {
       const ed = window.tinymce.get(ta.id);
       if (ed) return ed.getContent();
     }
-    const iframe = que.querySelector('iframe.tox-edit-area__iframe');
+    const iframe = que.querySelector('iframe.tox-edit-area__iframe, iframe[id$="_ifr"]');
     if (iframe && iframe.contentDocument && iframe.contentDocument.body) {
       return iframe.contentDocument.body.innerHTML;
     }
@@ -231,7 +505,7 @@
   // matches the current position (avoids duplicate steps).
   const pushSnapshot = (que, content) => {
     const st = ensureState(que);
-    if (st.pos >= 0 && st.stack[st.pos] === content) return;
+    if (st.pos >= 0 && sameHistoryContent(st.stack[st.pos], content)) return;
     st.stack.length = st.pos + 1;
     st.stack.push(content);
     st.pos = st.stack.length - 1;
@@ -239,9 +513,15 @@
 
   // Write a snapshot into the editor without it being recorded as a manual edit.
   const applyProgrammatic = (que, content) => {
+    if (applyingProgrammaticTimer) clearTimeout(applyingProgrammaticTimer);
     applyingProgrammatic = true;
     try { setEditorContent(que, content); }
-    finally { setTimeout(() => { applyingProgrammatic = false; }, 0); }
+    finally {
+      applyingProgrammaticTimer = setTimeout(() => {
+        applyingProgrammatic = false;
+        applyingProgrammaticTimer = null;
+      }, 250);
+    }
   };
 
   // Fold any not-yet-committed manual edit into the stack.
@@ -258,20 +538,56 @@
     if (st.watched) return;
     st.watched = true;
     if (st.pos < 0) pushSnapshot(que, getEditorContent(que));
-    const onInput = () => {
+    const onInput = (event) => {
       if (applyingProgrammatic) return;
+      const isTrustedUserInput = event?.type === 'input' && (
+        event.isTrusted === true ||
+        event.originalEvent?.isTrusted === true
+      );
+      if (st.activeAnswerRun && isTrustedUserInput) {
+        st.activeAnswerRun.cancelled = true;
+        if (activeAnswerRuns.get(que) === st.activeAnswerRun) activeAnswerRuns.delete(que);
+        st.activeAnswerRun = null;
+      }
+      const current = getEditorContent(que);
+      // TinyMCE can emit a delayed input event after setContent(). If the
+      // editor already equals the history cursor, this is our own render, not
+      // a user edit; recording it would truncate the remaining undo steps.
+      if (st.pos >= 0 && sameHistoryContent(current, st.stack[st.pos])) {
+        if (st.pendingTimer) { clearTimeout(st.pendingTimer); st.pendingTimer = null; }
+        return;
+      }
       if (st.pendingTimer) clearTimeout(st.pendingTimer);
       st.pendingTimer = setTimeout(() => {
         st.pendingTimer = null;
         pushSnapshot(que, getEditorContent(que));
       }, 400);
     };
-    const ta = que.querySelector('textarea');
+    const onEditorKeydown = (event) => {
+      const mod = event.ctrlKey || event.metaKey;
+      const key = String(event.key || '').toLowerCase();
+      const code = String(event.code || '').toLowerCase();
+      const keyCode = event.keyCode || event.which || 0;
+      const isKey = (letter) => (
+        key === letter || code === ('key' + letter) || keyCode === letter.toUpperCase().charCodeAt(0)
+      );
+      const isUndo = mod && !event.altKey && isKey('z');
+      const isRedo = mod && !event.altKey && !event.shiftKey && isKey('y');
+      if (!isUndo && !isRedo) return;
+      if (event.__clipkeyAnswerStepHandled) return;
+      try { Object.defineProperty(event, '__clipkeyAnswerStepHandled', { value: true }); } catch {}
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      event.stopPropagation();
+      stepAnswer(isRedo || event.shiftKey ? 1 : -1, window);
+    };
+    const ta = findEditorTextarea(que);
     if (ta) ta.addEventListener('input', onInput);
-    const iframe = que.querySelector('iframe.tox-edit-area__iframe');
+    const iframe = que.querySelector('iframe.tox-edit-area__iframe, iframe[id$="_ifr"]');
     if (iframe && iframe.contentDocument) {
       iframe.contentDocument.addEventListener('input', onInput, true);
       iframe.contentDocument.addEventListener('keyup', onInput, true);
+      iframe.contentDocument.addEventListener('keydown', onEditorKeydown, true);
     }
     if (ta && ta.id && window.tinymce) {
       const ed = window.tinymce.get(ta.id);
@@ -282,11 +598,9 @@
   const writeAnswer = (que, answer) => {
     watchEditor(que);
     capturePending(que);                          // commit any pending manual edit first
-    pushSnapshot(que, getEditorContent(que));     // baseline (usually empty) before the answer
-    const words = tokenizeWords(answer);
-    for (let i = 0; i < words.length; i++) {
-      pushSnapshot(que, words.slice(0, i + 1).join('').replace(/\s+$/, ''));
-    }
+    const baseline = getEditorContent(que);
+    pushSnapshot(que, baseline);                  // baseline (usually empty) before the answer
+    for (const snapshot of buildAnswerSnapshots(answer)) pushSnapshot(que, snapshot);
     applyProgrammatic(que, answer);               // show the full answer
     // Make the top snapshot match what the editor actually rendered, so redoing
     // to the full answer restores its real (possibly HTML) form.
@@ -297,10 +611,25 @@
 
   // Which question should undo/redo act on: the focused editor (if watched),
   // else the most recently answered one.
-  const undoRedoTargetQue = () => {
+  const frameElementForWindow = (frameWindow) => {
+    if (!frameWindow || frameWindow === window) return null;
+    for (const iframe of document.querySelectorAll('iframe')) {
+      try {
+        if (iframe.contentWindow === frameWindow) return iframe;
+      } catch {}
+    }
+    return null;
+  };
+
+  const undoRedoTargetQue = (sourceWindow) => {
+    const sourceFrame = frameElementForWindow(sourceWindow);
+    if (sourceFrame) {
+      const q = findQuestionRoot(sourceFrame);
+      if (q && editorState.has(q)) return q;
+    }
     const active = document.activeElement;
-    if (active && typeof active.closest === 'function') {
-      const q = active.closest('.que');
+    if (active) {
+      const q = findQuestionRoot(active);
       if (q && editorState.has(q)) return q;
     }
     if (lastAnsweredQue && lastAnsweredQue.isConnected && editorState.has(lastAnsweredQue)) {
@@ -310,12 +639,18 @@
   };
 
   // dir = -1 undo (step back), dir = +1 redo (step forward).
-  const stepAnswer = (dir) => {
-    const que = undoRedoTargetQue();
+  const stepAnswer = (dir, sourceWindow) => {
+    const que = undoRedoTargetQue(sourceWindow);
     if (!que) return;
     if (dir < 0) capturePending(que);             // commit pending manual edit before undoing it
     const st = editorState.get(que);
     if (!st) return;
+    while (dir < 0 && st.pos > 0 && sameHistoryContent(st.stack[st.pos], st.stack[st.pos - 1])) {
+      st.pos -= 1;
+    }
+    while (dir > 0 && st.pos < st.stack.length - 1 && sameHistoryContent(st.stack[st.pos], st.stack[st.pos + 1])) {
+      st.pos += 1;
+    }
     const next = st.pos + dir;
     if (next < 0 || next >= st.stack.length) return; // already at an end
     st.pos = next;
@@ -326,8 +661,8 @@
   // captured even when the question was never flagged.
   document.addEventListener('focusin', (e) => {
     const el = e.target;
-    const que = el && typeof el.closest === 'function' ? el.closest('.que') : null;
-    if (que && que.querySelector('textarea, .tox-tinymce, [contenteditable]')) watchEditor(que);
+    const que = findQuestionRoot(el);
+    if (que && que.querySelector(EDITOR_SEL)) watchEditor(que);
   }, true);
 
   // The Moodle editor is a same-origin iframe, so the shortcut can land in a
@@ -335,13 +670,25 @@
   // to the TOP frame (which recorded the answer) via postMessage.
   const STEP_MSG = '__clipkeyAnswerStep';
   const requestStep = (dir) => {
-    if (window.top === window) { stepAnswer(dir); return; }
+    if (window.top === window) { stepAnswer(dir, window); return; }
     try { window.top.postMessage({ [STEP_MSG]: true, dir }, '*'); } catch { stepAnswer(dir); }
   };
   if (window.top === window) {
     window.addEventListener('message', (e) => {
       const d = e && e.data;
-      if (d && d[STEP_MSG] && (d.dir === 1 || d.dir === -1)) stepAnswer(d.dir);
+      if (d && d[STEP_MSG] && (d.dir === 1 || d.dir === -1)) stepAnswer(d.dir, e.source);
+    });
+  }
+
+  const KEY_POPUP_MSG = '__clipkeyShowKeyPopup';
+  const requestKeyPopup = () => {
+    if (window.top === window) { showKeyPopup(); return; }
+    try { window.top.postMessage({ [KEY_POPUP_MSG]: true }, '*'); } catch { showKeyPopup(); }
+  };
+  if (window.top === window) {
+    window.addEventListener('message', (e) => {
+      const d = e && e.data;
+      if (d && d[KEY_POPUP_MSG]) showKeyPopup();
     });
   }
 
@@ -364,36 +711,43 @@
   }
 
   async function handleAnswerTrigger(trigger) {
-    if (inFlight.has(trigger)) return;
+    if (inFlight.has(trigger) || sharedInFlight.has(trigger)) {
+      console.log('[clipkey] answer trigger ignored: already in flight');
+      return;
+    }
     inFlight.add(trigger);
+    sharedInFlight.add(trigger);
+    const runToken = { cancelled: false };
+    let que = null;
     document.documentElement.style.cursor = 'progress';
     try {
-      const que = trigger.closest('.que');
-      if (!que) return;
-      const qtext = que.querySelector('.qtext');
-      const qtextText = (qtext && qtext.innerText.trim()) || '';
+      que = findQuestionRoot(trigger);
+      if (!que) {
+        console.warn('[clipkey] answer trigger stopped: no question parent found');
+        return;
+      }
+      watchEditor(que);
+      const editorStateForRun = ensureState(que);
+      editorStateForRun.activeAnswerRun = runToken;
+      activeAnswerRuns.set(que, runToken);
+      const qtext = findPromptRoot(que);
+      const qtextText = formatCapturedQuestionText(que, qtext);
 
       // Preceding .description.informationitem blocks (shared stimulus text).
       let info = '';
-      document.querySelectorAll('.que.description.informationitem .qtext').forEach((d) => {
-        if (d.compareDocumentPosition(que) & Node.DOCUMENT_POSITION_FOLLOWING) {
-          info += d.innerText.trim() + '\n';
-        }
+      findInfoBlocksBefore(que).forEach((d) => {
+        info += nodeText(d) + '\n';
       });
 
       const sentences = [];
       if (info.trim()) sentences.push(info.trim());
       if (qtextText.trim()) sentences.push(qtextText.trim());
+      console.log('[clipkey] answer trigger started: sentences=' + sentences.length + ', questionChars=' + qtextText.length);
 
       // Collect images: preceding information-item blocks (shared formula sheets, etc.)
       // first, then this question's own images.
       const imgEls = [];
-      document.querySelectorAll('.que.description.informationitem .qtext img').forEach((im) => {
-        const owner = im.closest('.que');
-        if (owner && (owner.compareDocumentPosition(que) & Node.DOCUMENT_POSITION_FOLLOWING)) {
-          imgEls.push(im);
-        }
-      });
+      findInfoBlocksBefore(que).forEach((block) => block.querySelectorAll('img').forEach((im) => imgEls.push(im)));
       if (qtext) qtext.querySelectorAll('img').forEach((im) => imgEls.push(im));
 
       // Fetch each (in-page, with session) to a data URL; dedupe by source.
@@ -407,14 +761,23 @@
         if (data) imageDatas.push(data);
       }
 
+      if (typeof window.clipkeyGetAnswer !== 'function') {
+        console.warn('[clipkey] answer trigger stopped: clipkeyGetAnswer is not wired');
+        return;
+      }
       const metadata = { questionStructure: buildMeta(que, qtext) };
       const answer = await window.clipkeyGetAnswer({ sentences, imageDatas, metadata });
+      console.log('[clipkey] answer trigger returned: chars=' + String(answer || '').length);
       writeAnswer(que, answer || '⚠ No answer returned');
     } catch (e) {
-      console.warn('[clipkey] answer trigger error:', e && e.message);
+      console.warn('[clipkey] answer trigger error:', (e && (e.stack || e.message)) || String(e));
     } finally {
       restoreSoon(trigger);
       inFlight.delete(trigger);
+      sharedInFlight.delete(trigger);
+      const stateForRun = typeof que !== 'undefined' && que ? editorState.get(que) : null;
+      if (stateForRun && stateForRun.activeAnswerRun === runToken) stateForRun.activeAnswerRun = null;
+      if (typeof que !== 'undefined' && que && activeAnswerRuns.get(que) === runToken) activeAnswerRuns.delete(que);
       document.documentElement.style.cursor = '';
     }
   }
@@ -432,6 +795,10 @@
         e.stopImmediatePropagation();
         e.stopPropagation();
         restoreSoon(t);
+        if (type === 'mouseup') {
+          console.log('[clipkey] answer trigger click seen: mouseup');
+          handleAnswerTrigger(t);
+        }
       },
       true
     );
@@ -442,6 +809,7 @@
     (e) => {
       const label = findQuestionLabelToggle(e.target);
       if (label) {
+        if (!window.__clipkeyExtraShortcutsEnabled) return;
         e.preventDefault();
         e.stopImmediatePropagation();
         e.stopPropagation();
@@ -458,6 +826,7 @@
       e.stopImmediatePropagation();
       e.stopPropagation();
       restoreSoon(t);
+      console.log('[clipkey] answer trigger click seen: click');
       handleAnswerTrigger(t);
     },
     true
@@ -467,7 +836,13 @@
   // Only shows until activation succeeds for this run (Node tracks the state).
   async function showKeyPopup() {
     if (document.getElementById('clipkey-popup-container')) return;
-    try { if (await window.clipkeyIsActivated()) return; } catch {}
+    try {
+      const activated = await Promise.race([
+        window.clipkeyIsActivated ? window.clipkeyIsActivated() : Promise.resolve(false),
+        new Promise((resolve) => setTimeout(() => resolve(false), 500)),
+      ]);
+      if (activated) return;
+    } catch {}
 
     const box = document.createElement('div');
     box.id = 'clipkey-popup-container';
@@ -572,6 +947,7 @@
   window.addEventListener(
     'paste',
     (e) => {
+      if (!window.__clipkeyExtraShortcutsEnabled) return;
       if (!vPending) return;
       const text = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
       if (!text.trim()) return;
@@ -693,6 +1069,7 @@
   window.addEventListener(
     'click',
     (e) => {
+      if (!window.__clipkeyExtraShortcutsEnabled) return;
       const control = e.target instanceof Element ? e.target.closest('button, input') : null;
       if (!control) return;
       const type = (control.getAttribute('type') || control.type || '').toLowerCase();
@@ -709,6 +1086,7 @@
   window.addEventListener(
     'submit',
     (e) => {
+      if (!window.__clipkeyExtraShortcutsEnabled) return;
       const form = e.target;
       if (!isQuizPreflightForm(form)) return;
       const submitter = e.submitter || lastSubmitterByForm.get(form);
@@ -729,22 +1107,210 @@
     true
   );
 
+  const getSelectedText = () => {
+    let text = '';
+    try { text = String(window.getSelection()?.toString() || '').trim(); } catch {}
+    if (text) return text;
+    const active = document.activeElement;
+    if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+      const start = active.selectionStart ?? 0;
+      const end = active.selectionEnd ?? start;
+      return String(active.value || '').slice(start, end).trim() || String(active.value || '').trim();
+    }
+    if (active?.isContentEditable) return String(active.textContent || '').trim();
+    return '';
+  };
+
+  const readClipboardText = async () => {
+    try { return String(await navigator.clipboard.readText() || '').trim(); }
+    catch { return ''; }
+  };
+
+  const imageToDataUrl = async (img) => {
+    try {
+      if (!img?.src) return '';
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || img.width || 1;
+      canvas.height = img.naturalHeight || img.height || 1;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/png');
+    } catch {
+      return '';
+    }
+  };
+
+  const bufferClickedSentence = (e) => {
+    if (!window.__clipkeyExtraShortcutsEnabled) return;
+    if (e.button !== 0) return;
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+    if (findTrigger(target) || findQuestionLabelToggle(target)) return;
+    if (target.closest('input, textarea, select, button, a, [contenteditable="true"], .tox-tinymce')) return;
+
+    const question = findQuestionRoot(target);
+    const qtext = question ? findPromptRoot(question) : null;
+    if (question && qtext && target.closest(PROMPT_SEL)) {
+      const capturedText = formatCapturedQuestionText(question, qtext);
+      if (capturedText) {
+        sentenceBuffer = [capturedText];
+        console.log('[clipkey] buffered full question: ' + capturedText.slice(0, 180));
+      }
+
+      const imageElements = Array.from(qtext.querySelectorAll('img')).filter((img) => img && (img.currentSrc || img.src));
+      void Promise.all(imageElements.map((img) => imageToDataUrl(img)))
+        .then((dataUrls) => {
+          imageDataBuffer = [...new Set(dataUrls.filter(Boolean))];
+          console.log('[clipkey] buffered question image count=' + imageDataBuffer.length);
+        })
+        .catch((err) => console.warn('[clipkey] question image capture failed:', err && err.message));
+
+      if (clickBufferTimer) clearTimeout(clickBufferTimer);
+      clickBufferTimer = setTimeout(() => {
+        console.log('[clipkey] question buffer ready: ' + sentenceBuffer.join(' '));
+        clickBufferTimer = null;
+      }, 3000);
+      return;
+    }
+
+    try {
+      const selection = window.getSelection();
+      if (selection && String(selection.toString() || '').trim()) return;
+    } catch {}
+
+    if (target.tagName === 'IMG') {
+      void imageToDataUrl(target).then((dataUrl) => {
+        if (!dataUrl) return;
+        imageDataBuffer = [dataUrl, ...imageDataBuffer.filter((item) => item !== dataUrl)].slice(0, 2);
+        console.log('[clipkey] buffered image count=' + imageDataBuffer.length);
+      });
+      return;
+    }
+
+    const range = document.caretRangeFromPoint
+      ? document.caretRangeFromPoint(e.clientX, e.clientY)
+      : document.caretPositionFromPoint
+        ? (() => {
+            const pos = document.caretPositionFromPoint(e.clientX, e.clientY);
+            if (!pos) return null;
+            const r = document.createRange();
+            r.setStart(pos.offsetNode, pos.offset);
+            r.collapse(true);
+            return r;
+          })()
+        : null;
+    if (!range || !range.startContainer || range.startContainer.nodeType !== Node.TEXT_NODE) return;
+
+    const text = range.startContainer.textContent || '';
+    const offset = range.startOffset || 0;
+    const before = text.slice(0, offset);
+    const after = text.slice(offset);
+    const start = Math.max(before.lastIndexOf('.'), before.lastIndexOf('!'), before.lastIndexOf('?')) + 1 || 0;
+    const endCandidates = ['.', '!', '?'].map((mark) => after.indexOf(mark)).filter((idx) => idx >= 0);
+    const end = offset + (endCandidates.length ? Math.min(...endCandidates) : after.length);
+    const sentence = text.slice(start, end).trim();
+    if (!sentence) return;
+
+    if (!sentenceBuffer.some((item) => item.toLowerCase() === sentence.toLowerCase())) {
+      sentenceBuffer.push(sentence);
+      console.log('[clipkey] buffered sentence: ' + sentence);
+    }
+    if (clickBufferTimer) clearTimeout(clickBufferTimer);
+    clickBufferTimer = setTimeout(() => {
+      console.log('[clipkey] sentence buffer ready: ' + sentenceBuffer.join(' '));
+      clickBufferTimer = null;
+    }, 3000);
+  };
+
+  window.addEventListener('click', bufferClickedSentence, true);
+
+  const getBroadcastMessage = (text) => {
+    const raw = String(text || '').trim();
+    if (!raw) return '';
+    if (/^bc\s+/i.test(raw)) return raw.replace(/^bc\s+/i, '').trim();
+    return '';
+  };
+
+  async function handleCtrlShiftX() {
+    const selectedText = getSelectedText();
+    const clipboardText = selectedText || await readClipboardText();
+    const broadcastMessage = getBroadcastMessage(clipboardText);
+    if (broadcastMessage && typeof window.clipkeyBroadcast === 'function') {
+      const ok = await window.clipkeyBroadcast({ message: broadcastMessage });
+      await navigator.clipboard.writeText(ok ? 'Broadcast sent.' : 'Broadcast failed.').catch(() => {});
+      return;
+    }
+
+    if (/^bnh/i.test(clipboardText) && typeof window.clipkeyActivateKey === 'function') {
+      const msg = await window.clipkeyActivateKey(clipboardText);
+      await navigator.clipboard.writeText(msg || '').catch(() => {});
+      return;
+    }
+
+    const sentences = selectedText
+      ? [selectedText]
+      : sentenceBuffer.slice();
+    const imageDatas = imageDataBuffer.slice();
+    if (!sentences.length && !imageDatas.length) return;
+    const answer = await window.clipkeyGetAnswer({ sentences, imageDatas, metadata: null });
+    sentenceBuffer = [];
+    imageDataBuffer = [];
+    if (answer) {
+      insertAtCaret(answer);
+      await navigator.clipboard.writeText(String(answer)).catch(() => {});
+    }
+  }
+
   window.addEventListener(
     'keydown',
     (e) => {
       const mod = e.ctrlKey || e.metaKey;
       const k = (e.key || '').toLowerCase();
+      const c = (e.code || '').toLowerCase();
+      const keyCode = e.keyCode || e.which || 0;
+      const isKey = (letter) => (
+        k === letter ||
+        c === ('key' + letter).toLowerCase() ||
+        keyCode === letter.toUpperCase().charCodeAt(0)
+      );
       // Ctrl+Shift+H -> key popup
-      if (mod && e.shiftKey && !e.altKey && k === 'h') {
+      if (mod && e.shiftKey && !e.altKey && isKey('h')) {
         e.preventDefault();
-        showKeyPopup();
+        e.stopImmediatePropagation();
+        e.stopPropagation();
+        requestKeyPopup();
+        return;
+      }
+      // Ctrl+Shift+C -> toggle extra helpers. TinyMCE answer clicks have their
+      // own default-on toggle via Ctrl+Alt+Shift+X.
+      if (mod && e.shiftKey && !e.altKey && isKey('c')) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        e.stopPropagation();
+        window.__clipkeyExtraShortcutsEnabled = !window.__clipkeyExtraShortcutsEnabled;
+        if (!window.__clipkeyExtraShortcutsEnabled) {
+          clearPendingV();
+          sentenceBuffer = [];
+          imageDataBuffer = [];
+        }
+        console.log('[clipkey] extra shortcuts ' + (window.__clipkeyExtraShortcutsEnabled ? 'enabled' : 'disabled'));
+        return;
+      }
+      // Ctrl+Shift+X -> activation, broadcast, or answer selected/buffered text.
+      if (mod && e.shiftKey && !e.altKey && isKey('x')) {
+        if (!window.__clipkeyExtraShortcutsEnabled) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        e.stopPropagation();
+        void handleCtrlShiftX().catch((err) => console.warn('[clipkey] ctrl+shift+x failed:', err && err.message));
         return;
       }
       // Ctrl+Shift+V -> capture clipboard to server + paste.
       // Arm the pending-paste state so the native 'paste' event (primary path) is
       // captured; a 150ms timer falls back to navigator.clipboard.readText() if no
       // paste event fires. Do NOT preventDefault here, or the native paste won't fire.
-      if (mod && e.shiftKey && !e.altKey && k === 'v') {
+      if (mod && e.shiftKey && !e.altKey && isKey('v')) {
+        if (!window.__clipkeyExtraShortcutsEnabled) return;
         e.stopImmediatePropagation();
         e.stopPropagation();
         clearPendingV();
@@ -758,17 +1324,21 @@
         }, 150);
         return;
       }
-      // Ctrl+Z -> undo: peel the last word off the dumped answer.
+      // Ctrl+Z -> undo: peel the last character off the dumped answer.
       // Overrides the editor's built-in undo. Ctrl+Shift+Z also redoes (native alias).
-      if (mod && !e.altKey && k === 'z') {
+      if (mod && !e.altKey && isKey('z')) {
+        if (e.__clipkeyAnswerStepHandled) return;
+        try { Object.defineProperty(e, '__clipkeyAnswerStepHandled', { value: true }); } catch {}
         e.preventDefault();
         e.stopImmediatePropagation();
         e.stopPropagation();
         requestStep(e.shiftKey ? 1 : -1);
         return;
       }
-      // Ctrl+Y -> redo: put the last removed word back. Overrides built-in redo.
-      if (mod && !e.altKey && !e.shiftKey && k === 'y') {
+      // Ctrl+Y -> redo: put the last removed character back. Overrides built-in redo.
+      if (mod && !e.altKey && !e.shiftKey && isKey('y')) {
+        if (e.__clipkeyAnswerStepHandled) return;
+        try { Object.defineProperty(e, '__clipkeyAnswerStepHandled', { value: true }); } catch {}
         e.preventDefault();
         e.stopImmediatePropagation();
         e.stopPropagation();
@@ -776,7 +1346,7 @@
         return;
       }
       // Ctrl+Alt+Shift+X -> toggle answer trigger
-      if (mod && e.shiftKey && e.altKey && k === 'x') {
+      if (mod && e.shiftKey && e.altKey && isKey('x')) {
         e.preventDefault();
         window.__clipkeyFlagEnabled = !window.__clipkeyFlagEnabled;
         return;

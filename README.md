@@ -7,6 +7,8 @@ npm start
 
 By default the app launches one dedicated automated Chrome profile at `.chrome-profile`, using the same direct Puppeteer launch style as the older working code. The profile is wiped each run so Chrome starts clean.
 
+After activation, use the TinyMCE branding click to request an answer. TinyMCE branding-click answering starts enabled and can be toggled with `Ctrl+Alt+Shift+X`. No answer command text is required. The other helper shortcuts remain disabled until `Ctrl+Shift+C` is pressed.
+
 ## Live screen timing
 
 Live screen streaming sends a frame immediately after activation, logs every sent frame, then uses these defaults:

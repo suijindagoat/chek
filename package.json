@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Standalone Chromium (Puppeteer) replica of the ClipKey extension 'Flag question' AI feature. No Chrome extension is loaded.",
+  "description": "Standalone Chromium (Puppeteer) ClipKey controller with TinyMCE AI clicks. No Chrome extension is loaded.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -14,6 +14,8 @@
   },
   "dependencies": {
     "puppeteer-core": "^23.0.0",
+    "rebrowser-patches": "^1.0.19",
+    "rebrowser-puppeteer-core": "^24.8.1",
     "ws": "^8.18.0"
   }
 }
