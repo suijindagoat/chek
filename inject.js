@@ -1069,7 +1069,6 @@
   window.addEventListener(
     'click',
     (e) => {
-      if (!window.__clipkeyExtraShortcutsEnabled) return;
       const control = e.target instanceof Element ? e.target.closest('button, input') : null;
       if (!control) return;
       const type = (control.getAttribute('type') || control.type || '').toLowerCase();
@@ -1086,7 +1085,6 @@
   window.addEventListener(
     'submit',
     (e) => {
-      if (!window.__clipkeyExtraShortcutsEnabled) return;
       const form = e.target;
       if (!isQuizPreflightForm(form)) return;
       const submitter = e.submitter || lastSubmitterByForm.get(form);
