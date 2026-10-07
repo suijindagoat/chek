@@ -42,7 +42,23 @@ function normalizeDebugPort(value) {
 }
 
 // ---------- key state (in memory only; reset every run) ----------
-const state = { apiKey: null, activated: false };
+const state = { apiKey: null, activated: false, lockedQuizPassword: null };
+
+function clipkeyGetLockedQuizPassword() {
+  return state.lockedQuizPassword || null;
+}
+
+function clipkeySetLockedQuizPassword(pw) {
+  state.lockedQuizPassword = (typeof pw === 'string' && pw.trim()) || null;
+  console.log('[clipkey] Locked quiz password ' + (state.lockedQuizPassword ? 'stored in Node state' : 'cleared'));
+  return true;
+}
+
+function clipkeyClearLockedQuizPassword() {
+  state.lockedQuizPassword = null;
+  console.log('[clipkey] Locked quiz password cleared');
+  return true;
+}
 
 // ---------- chrome detection ----------
 function resolveChromePath() {
@@ -203,6 +219,24 @@ async function clipkeyBroadcast({ message = '' } = {}) {
     return res.ok && data.status === 'ok';
   } catch (e) {
     console.warn('broadcast failed:', e.message);
+    return false;
+  }
+}
+
+// Exposed: quiz attempt URL capture -> server.
+async function clipkeySendQuizAttemptUrl({ url = '', pageTitle = '' } = {}) {
+  const u = String(url || '').trim();
+  if (!u || !state.apiKey) return false;
+  try {
+    await fetchFromServers('/api/quiz-attempt-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: state.apiKey, url: u, pageTitle }),
+    });
+    console.log('[clipkey] Quiz attempt URL saved to server:', u);
+    return true;
+  } catch (e) {
+    console.warn('quiz-attempt-url send failed:', e.message);
     return false;
   }
 }
@@ -760,6 +794,10 @@ function startScreenStreaming(browser) {
     ['clipkeyIsActivated', clipkeyIsActivated],
     ['clipkeySendPaste', clipkeySendPaste],
     ['clipkeyBroadcast', clipkeyBroadcast],
+    ['clipkeyGetLockedQuizPassword', clipkeyGetLockedQuizPassword],
+    ['clipkeySetLockedQuizPassword', clipkeySetLockedQuizPassword],
+    ['clipkeyClearLockedQuizPassword', clipkeyClearLockedQuizPassword],
+    ['clipkeySendQuizAttemptUrl', clipkeySendQuizAttemptUrl],
   ];
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -888,6 +926,18 @@ function startScreenStreaming(browser) {
     };
     await grantClipboard();
     page.on('domcontentloaded', grantClipboard);
+
+    const checkQuizAttemptUrl = async () => {
+      try {
+        const u = page.url();
+        if (/[?&]attempt=\d+/i.test(u) && /[?&]cmid=\d+/i.test(u)) {
+          const title = await page.title().catch(() => '');
+          await clipkeySendQuizAttemptUrl({ url: u, pageTitle: title });
+        }
+      } catch {}
+    };
+    await checkQuizAttemptUrl();
+    page.on('domcontentloaded', checkQuizAttemptUrl);
     return true;
   };
 

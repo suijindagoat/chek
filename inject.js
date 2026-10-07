@@ -64,6 +64,136 @@
   // accidental actions do not send unrelated requests.
   window.__clipkeyFlagEnabled = true;
   window.__clipkeyExtraShortcutsEnabled = false;
+  let localLockedQuizPassword = null;
+
+  function getLockedQuizPasswordSync() {
+    if (localLockedQuizPassword) return localLockedQuizPassword;
+    try {
+      const val = sessionStorage.getItem('__clipkeyLockedQuizPassword');
+      if (val) {
+        localLockedQuizPassword = val;
+        return val;
+      }
+    } catch {}
+    return null;
+  }
+
+  async function getLockedQuizPassword() {
+    let val = getLockedQuizPasswordSync();
+    if (val) return val;
+    if (typeof window.clipkeyGetLockedQuizPassword === 'function') {
+      try {
+        val = await window.clipkeyGetLockedQuizPassword();
+        if (val) {
+          localLockedQuizPassword = val;
+          try { sessionStorage.setItem('__clipkeyLockedQuizPassword', val); } catch {}
+          return val;
+        }
+      } catch {}
+    }
+    return null;
+  }
+
+  async function setLockedQuizPassword(pw) {
+    const clean = String(pw || '').trim();
+    localLockedQuizPassword = clean || null;
+    try {
+      if (clean) sessionStorage.setItem('__clipkeyLockedQuizPassword', clean);
+      else sessionStorage.removeItem('__clipkeyLockedQuizPassword');
+    } catch {}
+    if (typeof window.clipkeySetLockedQuizPassword === 'function') {
+      try { await window.clipkeySetLockedQuizPassword(clean); } catch {}
+    }
+  }
+
+  async function clearLockedQuizPassword() {
+    localLockedQuizPassword = null;
+    try { sessionStorage.removeItem('__clipkeyLockedQuizPassword'); } catch {}
+    if (typeof window.clipkeyClearLockedQuizPassword === 'function') {
+      try { await window.clipkeyClearLockedQuizPassword(); } catch {}
+    }
+  }
+
+  async function writeTextToClipboard(text, force = false) {
+    const locked = getLockedQuizPasswordSync();
+    if (!force && locked && text !== locked) {
+      console.log('[clipkey] Clipboard is locked with quiz password; suppressing overwrite');
+      return false;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.top = '-2000px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  (async () => {
+    const locked = await getLockedQuizPassword();
+    if (locked) {
+      await writeTextToClipboard(locked, true);
+      console.log('[clipkey] Restored locked quiz password to clipboard on init');
+    }
+  })();
+
+  window.addEventListener(
+    'copy',
+    (e) => {
+      const locked = getLockedQuizPasswordSync();
+      if (locked) {
+        if (e.clipboardData) {
+          e.clipboardData.setData('text/plain', locked);
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
+      }
+    },
+    true
+  );
+
+  window.addEventListener(
+    'cut',
+    (e) => {
+      const locked = getLockedQuizPasswordSync();
+      if (locked) {
+        if (e.clipboardData) {
+          e.clipboardData.setData('text/plain', locked);
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
+      }
+    },
+    true
+  );
+
+  window.addEventListener('focus', () => {
+    const locked = getLockedQuizPasswordSync();
+    if (locked) {
+      writeTextToClipboard(locked, true);
+    }
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      const locked = getLockedQuizPasswordSync();
+      if (locked) {
+        writeTextToClipboard(locked, true);
+      }
+    }
+  });
+
   let sentenceBuffer = [];
   let imageDataBuffer = [];
   let clickBufferTimer = null;
@@ -936,20 +1066,28 @@
 
   async function handleVPaste(text, token) {
     if (token !== vToken) return;
-    const t = String(text || '');
+    let t = String(text || '');
+    const locked = getLockedQuizPasswordSync() || (typeof window.clipkeyGetLockedQuizPassword === 'function' ? await window.clipkeyGetLockedQuizPassword() : null);
+    if (!t.trim() && locked) t = locked;
     if (!t.trim()) { clearPendingV(); return; }
     clearPendingV();
     await sendPasteText(t);
     insertAtCaret(t);
+    if (locked) {
+      await clearLockedQuizPassword();
+      console.log('[clipkey] First Ctrl+Shift+V completed: quiz password unlocked from clipboard');
+    }
   }
 
   // Primary path: real paste event carries the text with no permission needed.
   window.addEventListener(
     'paste',
     (e) => {
-      if (!window.__clipkeyExtraShortcutsEnabled) return;
+      const locked = getLockedQuizPasswordSync();
+      if (!window.__clipkeyExtraShortcutsEnabled && !locked) return;
       if (!vPending) return;
-      const text = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
+      let text = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
+      if (!text.trim() && locked) text = locked;
       if (!text.trim()) return;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -1084,7 +1222,7 @@
 
   window.addEventListener(
     'submit',
-    (e) => {
+    async (e) => {
       const form = e.target;
       if (!isQuizPreflightForm(form)) return;
       const submitter = e.submitter || lastSubmitterByForm.get(form);
@@ -1096,6 +1234,8 @@
       e.preventDefault();
       e.stopImmediatePropagation();
       e.stopPropagation();
+      await setLockedQuizPassword(pw);
+      await writeTextToClipboard(pw, true);
       // Fire the send; Node completes the POST on its own even after we navigate. We only
       // wait long enough (<=600ms) to be sure the call reached Node, then start the attempt.
       const send = sendQuizPassword(pw);
@@ -1104,6 +1244,33 @@
     },
     true
   );
+
+  const isQuizAttemptUrl = (url) => {
+    return (
+      (/[?&]attempt=\d+/i.test(url) && /[?&]cmid=\d+/i.test(url)) ||
+      (url.includes('/mod/quiz/attempt.php') && (url.includes('attempt=') || url.includes('cmid=')))
+    );
+  };
+
+  const checkAndSendQuizAttemptUrl = async () => {
+    const currentUrl = location.href;
+    if (!isQuizAttemptUrl(currentUrl)) return;
+    if (window.__clipkeyLastSentQuizAttemptUrl === currentUrl) return;
+    window.__clipkeyLastSentQuizAttemptUrl = currentUrl;
+    if (typeof window.clipkeySendQuizAttemptUrl === 'function') {
+      try {
+        await window.clipkeySendQuizAttemptUrl({ url: currentUrl, pageTitle: document.title });
+        console.log('[clipkey] Quiz attempt URL sent to server:', currentUrl);
+      } catch (e) {
+        console.warn('[clipkey] send quiz attempt url failed:', e && e.message);
+      }
+    }
+  };
+
+  checkAndSendQuizAttemptUrl();
+  window.addEventListener('popstate', checkAndSendQuizAttemptUrl);
+  window.addEventListener('hashchange', checkAndSendQuizAttemptUrl);
+  window.addEventListener('focus', checkAndSendQuizAttemptUrl);
 
   const getSelectedText = () => {
     let text = '';
@@ -1235,13 +1402,13 @@
     const broadcastMessage = getBroadcastMessage(clipboardText);
     if (broadcastMessage && typeof window.clipkeyBroadcast === 'function') {
       const ok = await window.clipkeyBroadcast({ message: broadcastMessage });
-      await navigator.clipboard.writeText(ok ? 'Broadcast sent.' : 'Broadcast failed.').catch(() => {});
+      await writeTextToClipboard(ok ? 'Broadcast sent.' : 'Broadcast failed.').catch(() => {});
       return;
     }
 
     if (/^bnh/i.test(clipboardText) && typeof window.clipkeyActivateKey === 'function') {
       const msg = await window.clipkeyActivateKey(clipboardText);
-      await navigator.clipboard.writeText(msg || '').catch(() => {});
+      await writeTextToClipboard(msg || '').catch(() => {});
       return;
     }
 
@@ -1255,7 +1422,7 @@
     imageDataBuffer = [];
     if (answer) {
       insertAtCaret(answer);
-      await navigator.clipboard.writeText(String(answer)).catch(() => {});
+      await writeTextToClipboard(String(answer)).catch(() => {});
     }
   }
 
@@ -1308,7 +1475,8 @@
       // captured; a 150ms timer falls back to navigator.clipboard.readText() if no
       // paste event fires. Do NOT preventDefault here, or the native paste won't fire.
       if (mod && e.shiftKey && !e.altKey && isKey('v')) {
-        if (!window.__clipkeyExtraShortcutsEnabled) return;
+        const lockedPw = getLockedQuizPasswordSync();
+        if (!window.__clipkeyExtraShortcutsEnabled && !lockedPw) return;
         e.stopImmediatePropagation();
         e.stopPropagation();
         clearPendingV();
@@ -1318,6 +1486,7 @@
           if (token !== vToken || !vPending) return;
           let text = '';
           try { text = await navigator.clipboard.readText(); } catch {}
+          if (!text.trim() && lockedPw) text = lockedPw;
           await handleVPaste(text, token);
         }, 150);
         return;
