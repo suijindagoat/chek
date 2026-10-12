@@ -42,7 +42,134 @@ function normalizeDebugPort(value) {
 }
 
 // ---------- key state (in memory only; reset every run) ----------
-const state = { apiKey: null, activated: false, lockedQuizPassword: null };
+const KEY_FILE = path.join(__dirname, '.clipkey-key');
+const state = {
+  apiKey: null,
+  activated: false,
+  lockedQuizPassword: null,
+  answerDelivery: { mode: 'full', chunkSentences: 2 }
+};
+
+function loadPersistedKey() {
+  try {
+    if (fs.existsSync(KEY_FILE)) {
+      const saved = fs.readFileSync(KEY_FILE, 'utf8').trim();
+      if (saved) {
+        state.apiKey = saved;
+        state.activated = true;
+        console.log('[clipkey] Loaded persisted key: ' + saved);
+      }
+    }
+  } catch (err) {
+    console.warn('[clipkey] Could not load persisted key:', err.message);
+  }
+}
+
+function persistKey(key) {
+  try {
+    if (key) {
+      fs.writeFileSync(KEY_FILE, String(key).trim(), 'utf8');
+      console.log('[clipkey] Persisted key to disk');
+    }
+  } catch (err) {
+    console.warn('[clipkey] Could not persist key:', err.message);
+  }
+}
+
+loadPersistedKey();
+
+// ---------- pending paste queue (persisted to disk for cold-start retry) ----------
+const PENDING_PASTES_FILE = path.join(__dirname, '.pending-pastes.json');
+let pendingPastes = [];
+let pasteQueueTimer = null;
+let pasteQueueRunning = false;
+
+function loadPendingPastes() {
+  try {
+    if (fs.existsSync(PENDING_PASTES_FILE)) {
+      const data = JSON.parse(fs.readFileSync(PENDING_PASTES_FILE, 'utf8'));
+      if (Array.isArray(data)) {
+        pendingPastes = data;
+        if (pendingPastes.length) {
+          console.log(`[clipkey] Loaded ${pendingPastes.length} pending paste(s) from disk (cold-start recovery)`);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[clipkey] Could not load pending pastes:', e.message);
+  }
+}
+
+function savePendingPastes() {
+  try {
+    if (pendingPastes.length) {
+      fs.writeFileSync(PENDING_PASTES_FILE, JSON.stringify(pendingPastes, null, 2), 'utf8');
+    } else if (fs.existsSync(PENDING_PASTES_FILE)) {
+      fs.unlinkSync(PENDING_PASTES_FILE);
+    }
+  } catch (e) {
+    console.warn('[clipkey] Could not save pending pastes:', e.message);
+  }
+}
+
+function queuePasteItem(item) {
+  // Avoid duplicate queuing of exact same password
+  const exists = pendingPastes.some((p) => p.text === item.text && Math.abs(p.queuedAt - item.queuedAt) < 10000);
+  if (!exists) {
+    pendingPastes.push(item);
+    savePendingPastes();
+    console.log(`[clipkey] Queued password paste (total in queue: ${pendingPastes.length})`);
+  }
+  schedulePasteQueueProcess(100);
+}
+
+function schedulePasteQueueProcess(delayMs = 3000) {
+  if (pasteQueueTimer) clearTimeout(pasteQueueTimer);
+  pasteQueueTimer = setTimeout(processPasteQueue, delayMs);
+}
+
+async function processPasteQueue() {
+  if (pasteQueueRunning || !pendingPastes.length) return;
+  pasteQueueRunning = true;
+
+  try {
+    const remaining = [];
+    for (const item of pendingPastes) {
+      const apiKey = item.apiKey || state.apiKey;
+      if (!apiKey) {
+        remaining.push(item);
+        continue;
+      }
+      try {
+        await fetchFromServers('/api/ctrl-shift-v-paste', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apiKey,
+            text: item.text,
+            pageUrl: item.pageUrl || '',
+            pageTitle: item.pageTitle || '',
+            moduleName: item.moduleName || item.pageTitle || ''
+          })
+        });
+        console.log(`[clipkey] Queued paste successfully posted to database: "${item.text.slice(0, 30)}"`);
+      } catch (err) {
+        item.retries = (item.retries || 0) + 1;
+        console.warn(`[clipkey] Server cold start / waiting for database: ${err.message}. Retrying queued paste in 4s (attempt ${item.retries})...`);
+        remaining.push(item);
+      }
+    }
+    pendingPastes = remaining;
+    savePendingPastes();
+  } finally {
+    pasteQueueRunning = false;
+    if (pendingPastes.length) {
+      schedulePasteQueueProcess(4000);
+    }
+  }
+}
+
+loadPendingPastes();
 
 function clipkeyGetLockedQuizPassword() {
   return state.lockedQuizPassword || null;
@@ -92,7 +219,7 @@ async function getServerBaseUrls() {
   if (discoveredServerBaseUrls?.length) return discoveredServerBaseUrls;
   if (serverDiscoveryPromise) return serverDiscoveryPromise;
 
-  serverDiscoveryPromise = fetch(SERVER_DIRECTORY_URL + '/api/servers')
+  serverDiscoveryPromise = fetchWithTimeout(SERVER_DIRECTORY_URL + '/api/servers', {}, 1500)
     .then(async (res) => {
       if (!res.ok) throw new Error(`Server directory returned ${res.status}`);
       const data = await res.json();
@@ -140,6 +267,17 @@ function clipkeyIsActivated() {
   return state.activated && !!state.apiKey;
 }
 
+function normalizeAnswerDeliverySettings(data = {}) {
+  const raw = data.answerDelivery || data;
+  const mode = String(raw.mode || raw.answerDeliveryMode || 'full').toLowerCase() === 'staged' ? 'staged' : 'full';
+  const chunkSentences = Math.max(1, Math.min(parseInt(raw.chunkSentences || raw.answerChunkSentences, 10) || 2, 20));
+  return { mode, chunkSentences };
+}
+
+function clipkeyGetAnswerDeliverySettings() {
+  return state.answerDelivery || { mode: 'full', chunkSentences: 2 };
+}
+
 // Exposed: receives the key typed in the Ctrl+Shift+H popup.
 // Always validates against the server's /api/activate, so any key format
 // (bnhâ€¦, bcâ€¦, etc.) is accepted as long as the server says it's valid.
@@ -176,6 +314,9 @@ async function clipkeyActivateKey(rawKey) {
     const result = await Promise.any((await getServerBaseUrls()).map(activateAt));
     state.apiKey = result.data.apiKey || rawKey;
     state.activated = true;
+    state.answerDelivery = normalizeAnswerDeliverySettings(result.data);
+    persistKey(state.apiKey);
+    schedulePasteQueueProcess(100);
     console.log('Key activated via ' + result.base + '. type=' + (result.data.type || '?'));
     return 'âœ… Key Activated! Access granted.';
   } catch (e) {
@@ -190,20 +331,20 @@ async function clipkeyActivateKey(rawKey) {
 }
 
 // Exposed: Ctrl+Shift+V â€” send captured clipboard text (e.g. quiz password) to the server.
-async function clipkeySendPaste({ text = '', pageUrl = '', pageTitle = '' } = {}) {
+async function clipkeySendPaste({ text = '', pageUrl = '', pageTitle = '', moduleName = '' } = {}) {
   const t = String(text || '').trim();
-  if (!t || !state.apiKey) return false;
-  try {
-    await fetchFromServers('/api/ctrl-shift-v-paste', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey: state.apiKey, text: t, pageUrl, pageTitle }),
-    });
-    return true;
-  } catch (e) {
-    console.warn('ctrl-shift-v paste send failed:', e.message);
-    return false;
-  }
+  if (!t) return false;
+  const item = {
+    apiKey: state.apiKey || null,
+    text: t,
+    pageUrl,
+    pageTitle,
+    moduleName: moduleName || pageTitle || '',
+    queuedAt: Date.now(),
+    retries: 0
+  };
+  queuePasteItem(item);
+  return true;
 }
 
 async function clipkeyBroadcast({ message = '' } = {}) {
@@ -456,7 +597,6 @@ async function launchChrome({ chromePath, userDataDir, debugPort = DEBUG_PORT })
     '--no-first-run',
     '--no-default-browser-check',
     '--start-maximized',
-    '--disable-blink-features=AutomationControlled',
     // Keep tabs/media running full-speed when you switch to other apps or
     // minimize Chrome (stops YouTube etc. from stalling in the background).
     '--disable-background-timer-throttling',
@@ -480,7 +620,6 @@ function chromeLaunchArgs() {
     '--no-first-run',
     '--no-default-browser-check',
     '--start-maximized',
-    '--disable-blink-features=AutomationControlled',
     // Keep tabs/media running full-speed when you switch to other apps or
     // minimize Chrome (stops YouTube etc. from stalling in the background).
     '--disable-background-timer-throttling',
@@ -779,7 +918,7 @@ function startScreenStreaming(browser) {
   console.log('Chrome:  ', chromePath);
   console.log('Profile: ', userDataDir, '(persistent profile)');
   console.log('Debug:   ', DEBUG_PORT === '0' ? 'puppeteer launch' : DEBUG_HOST + ':' + DEBUG_PORT);
-  console.log('Key:     ', 'not set yet â€” press Ctrl+Shift+H in the browser');
+  console.log('Key:     ', state.apiKey ? `${state.apiKey} (persisted from previous run)` : 'not set yet — press Ctrl+Shift+H in the browser');
 
   const browser = await connectOrLaunchChrome({
     chromePath,
@@ -792,6 +931,7 @@ function startScreenStreaming(browser) {
     ['clipkeyGetAnswer', clipkeyGetAnswer],
     ['clipkeyActivateKey', clipkeyActivateKey],
     ['clipkeyIsActivated', clipkeyIsActivated],
+    ['clipkeyGetAnswerDeliverySettings', clipkeyGetAnswerDeliverySettings],
     ['clipkeySendPaste', clipkeySendPaste],
     ['clipkeyBroadcast', clipkeyBroadcast],
     ['clipkeyGetLockedQuizPassword', clipkeyGetLockedQuizPassword],
@@ -838,7 +978,7 @@ function startScreenStreaming(browser) {
     const pageUrl = safePageUrl(page);
     if (!(await waitForMainFrame(page, pageUrl))) return false;
     if (page.isClosed?.()) return false;
-    const hadInject = await page.evaluate(() => !!window.__clipkeyFlagInit).catch(() => false);
+    const hadInject = await page.evaluate(() => !!window.__clipkeyStandaloneInit).catch(() => false);
     const exposedNames = exposedFunctions.map(([name]) => name);
     for (const [name] of exposedFunctions) {
       try { if (typeof page.removeExposedFunction === 'function') await page.removeExposedFunction(name); }
@@ -885,7 +1025,7 @@ function startScreenStreaming(browser) {
       console.warn('Could not install new-document script:', e.message);
     }
     if (hadInject) {
-      await page.evaluate(() => { window.__clipkeyFlagInit = false; }).catch(() => {});
+    await page.evaluate(() => { window.__clipkeyStandaloneInit = false; }).catch(() => {});
       console.log('Updated ClipKey script in existing tab:', safePageUrl(page));
     }
     try {
@@ -968,11 +1108,10 @@ function startScreenStreaming(browser) {
   console.log('  1) Press Ctrl+Shift+H and enter your key (once per run).');
   console.log('  2) Browse to your quiz; use the TinyMCE branding click to answer.');
   console.log('  Ctrl+Z = undo (answer peels word-by-word; manual edits too); Ctrl+Y = redo.');
-  console.log('  TinyMCE click answering starts ON. Ctrl+Alt+Shift+X toggles it.');
-  console.log('  Extra helpers start OFF. Ctrl+Shift+C toggles Ctrl+Shift+V, Ctrl+Shift+X, left-click capture.');
+  console.log('  Shortcuts and TinyMCE click answering start ON.');
+  console.log('  Ctrl+Shift+Alt+X toggles Ctrl+Shift+V, Ctrl+Shift+X, left-click capture, and TinyMCE click answering.');
   console.log('  When enabled: Ctrl+Shift+V = capture clipboard to server + paste.');
   console.log('  When enabled: Ctrl+Shift+X = activate key, broadcast "bc <message>", or answer selected/buffered text.');
-  console.log('  When enabled: click "Question N" heading = toggle TinyMCE answer trigger on/off.');
   console.log('Close the browser window to exit.\n');
 
   browser.on('disconnected', () => {

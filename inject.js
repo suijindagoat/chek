@@ -5,8 +5,8 @@
 //                      at a time (back to front); manual edits undo as their own steps
 //   * Ctrl+Y / Ctrl+Shift+Z -> redo: step forward through the same timeline
 //   * Ctrl+Shift+H  -> key popup (only until activation succeeds for this run)
-//   * Ctrl+Shift+C  -> toggle extra helpers: Ctrl+Shift+V, Ctrl+Shift+X, left-click capture
-//   * Ctrl+Alt+Shift+X -> toggle the optional TinyMCE answer trigger (starts ON)
+//   * Ctrl+Shift+Alt+X -> toggle extra helpers: Ctrl+Shift+V, Ctrl+Shift+X, left-click capture
+//   * Ctrl+Alt+Shift+X -> alias to toggle helper shortcuts
 // All network calls are done in Node via the exposed window.clipkey* functions.
 // --- anti-automation patches ---
 (() => {
@@ -57,13 +57,12 @@
   scrubAutomationProps(document);
 })();
 (() => {
-  if (window.__clipkeyFlagInit) return;
-  window.__clipkeyFlagInit = true;
+  if (window.__clipkeyStandaloneInit) return;
+  window.__clipkeyStandaloneInit = true;
 
-  // TinyMCE clicks are the only answer trigger. Extra helpers remain opt-in so
-  // accidental actions do not send unrelated requests.
-  window.__clipkeyFlagEnabled = true;
-  window.__clipkeyExtraShortcutsEnabled = false;
+  // Helper shortcuts and TinyMCE click answering share the same toggle.
+  window.__clipkeyExtraShortcutsEnabled = true;
+  window.__clipkeyTinyMceAnswerEnabled = window.__clipkeyExtraShortcutsEnabled;
   let localLockedQuizPassword = null;
 
   function getLockedQuizPasswordSync() {
@@ -200,7 +199,6 @@
 
   const TINYMCE_BRANDING_SEL = '.que .tox-statusbar__branding a[href*="tiny.cloud/powered-by-tiny"], .que a[aria-label="Build with TinyMCE"]';
   const ANSWER_TRIGGER_SEL = TINYMCE_BRANDING_SEL;
-  const QUESTION_LABEL_SEL = '.que .info h3.no';
   const inFlight = new WeakSet();
   const sharedInFlight = window.__clipkeySharedAnswerInFlight || (window.__clipkeySharedAnswerInFlight = new WeakSet());
   const activeAnswerRuns = window.__clipkeyActiveAnswerRuns || (window.__clipkeyActiveAnswerRuns = new WeakMap());
@@ -253,14 +251,6 @@
       if (findQuestionRoot(el) === el) break;
     }
     return null;
-  };
-
-  const findQuestionLabelToggle = (t) => {
-    const el = t instanceof Element ? t : t && t.parentElement instanceof Element ? t.parentElement : null;
-    const label = el ? el.closest(QUESTION_LABEL_SEL) : null;
-    if (!label || !label.querySelector('.qno')) return null;
-    if (!/^Question\s+\d+/i.test((label.textContent || '').replace(/\s+/g, ' ').trim())) return null;
-    return label;
   };
 
   const EDITOR_SEL = [
@@ -324,7 +314,6 @@
       '.answer',
       '.attachments',
       '.info',
-      '.questionflag',
       '.tox-tinymce',
       '.tox-silver-sink',
       'textarea',
@@ -356,26 +345,15 @@
     else el.setAttribute(name, val);
   };
 
-  // Snapshot the flag's current visual state so we can put it back after swallowing the click.
+  // Snapshot the trigger's current visual state so we can put it back after swallowing the click.
   const snapshot = (el) => {
     if (!el || stateMap.has(el)) return stateMap.get(el);
-    const container = el.closest('.questionflag');
     const snap = {
       triggerClass: el.getAttribute('class'),
       triggerTitle: el.getAttribute('title'),
       triggerAriaLabel: el.getAttribute('aria-label'),
       triggerAriaPressed: el.getAttribute('aria-pressed'),
       triggerInnerHTML: el.innerHTML,
-      containerClass: container ? container.getAttribute('class') : null,
-      containerTitle: container ? container.getAttribute('title') : null,
-      hiddenInputs: container
-        ? Array.from(container.querySelectorAll('input')).map((i) => ({
-            input: i,
-            value: i.value,
-            attrValue: i.getAttribute('value'),
-            checked: typeof i.checked === 'boolean' ? i.checked : null,
-          }))
-        : [],
     };
     stateMap.set(el, snap);
     return snap;
@@ -383,22 +361,11 @@
 
   const restore = (el, snap) => {
     if (!el || !el.isConnected || !snap) return;
-    const container = el.closest('.questionflag');
     setAttr(el, 'class', snap.triggerClass);
     setAttr(el, 'title', snap.triggerTitle);
     setAttr(el, 'aria-label', snap.triggerAriaLabel);
     setAttr(el, 'aria-pressed', snap.triggerAriaPressed);
     if (el.innerHTML !== snap.triggerInnerHTML) el.innerHTML = snap.triggerInnerHTML;
-    if (container) {
-      setAttr(container, 'class', snap.containerClass);
-      setAttr(container, 'title', snap.containerTitle);
-    }
-    (snap.hiddenInputs || []).forEach(({ input, value, attrValue, checked }) => {
-      if (!input || !input.isConnected) return;
-      input.value = value;
-      if (typeof checked === 'boolean') input.checked = checked;
-      setAttr(input, 'value', attrValue);
-    });
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     if (el instanceof HTMLElement) el.blur();
   };
@@ -450,7 +417,7 @@
     )
   );
 
-  // Generic caret insertion (used by flag fallback and Ctrl+Shift+V paste).
+  // Generic caret insertion used by fallback writing and Ctrl+Shift+V paste.
   const insertAtCaret = (text) => {
     const active = document.activeElement;
     if (!active || !text) return false;
@@ -725,10 +692,42 @@
     }
   };
 
-  const writeAnswer = (que, answer) => {
+  const answerStageDelay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const getAnswerDeliverySettings = async () => {
+    try {
+      if (typeof window.clipkeyGetAnswerDeliverySettings === 'function') {
+        const settings = await window.clipkeyGetAnswerDeliverySettings() || {};
+        const mode = String(settings.mode || 'full').toLowerCase() === 'staged' ? 'staged' : 'full';
+        const chunkSentences = Math.max(1, Math.min(parseInt(settings.chunkSentences, 10) || 2, 20));
+        return { mode, chunkSentences };
+      }
+    } catch {}
+    return { mode: 'full', chunkSentences: 2 };
+  };
+
+  const buildAnswerStages = (answer, chunkSentences) => {
+    const text = String(answer || '').trim();
+    if (!text || /<\/?[a-z][\s\S]*>/i.test(text)) return [];
+    const sentences = text.match(/[^.!?]+(?:[.!?]+|$)/g)?.map((sentence) => sentence.trim()).filter(Boolean) || [];
+    if (sentences.length <= chunkSentences) return [];
+    const stages = [];
+    for (let i = chunkSentences; i < sentences.length; i += chunkSentences) {
+      stages.push(sentences.slice(0, i).join(' '));
+    }
+    return stages;
+  };
+
+  const writeAnswer = async (que, answer) => {
     watchEditor(que);
     capturePending(que);                          // commit any pending manual edit first
     const baseline = getEditorContent(que);
+    const settings = await getAnswerDeliverySettings();
+    const stages = settings.mode === 'staged' ? buildAnswerStages(answer, settings.chunkSentences) : [];
+    for (const stage of stages) {
+      applyProgrammatic(que, stage);
+      await answerStageDelay(1500);
+    }
     pushSnapshot(que, baseline);                  // baseline (usually empty) before the answer
     for (const snapshot of buildAnswerSnapshots(answer)) pushSnapshot(que, snapshot);
     applyProgrammatic(que, answer);               // show the full answer
@@ -787,8 +786,7 @@
     applyProgrammatic(que, st.stack[st.pos]);
   };
 
-  // Start watching an editor as soon as the user focuses it, so manual edits are
-  // captured even when the question was never flagged.
+  // Start watching an editor as soon as the user focuses it, so manual edits are captured.
   document.addEventListener('focusin', (e) => {
     const el = e.target;
     const que = findQuestionRoot(el);
@@ -811,6 +809,13 @@
   }
 
   const KEY_POPUP_MSG = '__clipkeyShowKeyPopup';
+  const POPUP_DISMISSED_KEY = '__clipkeyPopupDismissed';
+  const isPopupDismissed = () => {
+    try { return sessionStorage.getItem(POPUP_DISMISSED_KEY) === '1'; } catch { return false; }
+  };
+  const setPopupDismissed = () => {
+    try { sessionStorage.setItem(POPUP_DISMISSED_KEY, '1'); } catch {}
+  };
   const requestKeyPopup = () => {
     if (window.top === window) { showKeyPopup(); return; }
     try { window.top.postMessage({ [KEY_POPUP_MSG]: true }, '*'); } catch { showKeyPopup(); }
@@ -818,7 +823,7 @@
   if (window.top === window) {
     window.addEventListener('message', (e) => {
       const d = e && e.data;
-      if (d && d[KEY_POPUP_MSG]) showKeyPopup();
+      if (d && d[KEY_POPUP_MSG]) showKeyPopup({ force: !!d.force });
     });
   }
 
@@ -898,7 +903,7 @@
       const metadata = { questionStructure: buildMeta(que, qtext) };
       const answer = await window.clipkeyGetAnswer({ sentences, imageDatas, metadata });
       console.log('[clipkey] answer trigger returned: chars=' + String(answer || '').length);
-      writeAnswer(que, answer || '⚠ No answer returned');
+      await writeAnswer(que, answer || '⚠ No answer returned');
     } catch (e) {
       console.warn('[clipkey] answer trigger error:', (e && (e.stack || e.message)) || String(e));
     } finally {
@@ -913,11 +918,11 @@
   }
 
   // Capture-phase swallow of every pointer event on the TinyMCE branding link, so it never navigates away.
+  // When shortcuts are disabled, the control is inert instead of falling through to TinyMCE.
   ['pointerdown', 'mousedown', 'mouseup'].forEach((type) => {
     window.addEventListener(
       type,
       (e) => {
-        if (!window.__clipkeyFlagEnabled) return;
         const t = findTrigger(e.target);
         if (!t) return;
         snapshot(t);
@@ -925,7 +930,7 @@
         e.stopImmediatePropagation();
         e.stopPropagation();
         restoreSoon(t);
-        if (type === 'mouseup') {
+        if (type === 'mouseup' && window.__clipkeyTinyMceAnswerEnabled) {
           console.log('[clipkey] answer trigger click seen: mouseup');
           handleAnswerTrigger(t);
         }
@@ -937,18 +942,6 @@
   window.addEventListener(
     'click',
     (e) => {
-      const label = findQuestionLabelToggle(e.target);
-      if (label) {
-        if (!window.__clipkeyExtraShortcutsEnabled) return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        e.stopPropagation();
-        window.__clipkeyFlagEnabled = !window.__clipkeyFlagEnabled;
-        console.log('[clipkey] answer trigger ' + (window.__clipkeyFlagEnabled ? 'enabled' : 'disabled'));
-        return;
-      }
-
-      if (!window.__clipkeyFlagEnabled) return;
       const t = findTrigger(e.target);
       if (!t) return;
       if (!stateMap.get(t)) snapshot(t);
@@ -956,22 +949,25 @@
       e.stopImmediatePropagation();
       e.stopPropagation();
       restoreSoon(t);
-      console.log('[clipkey] answer trigger click seen: click');
-      handleAnswerTrigger(t);
+      if (window.__clipkeyTinyMceAnswerEnabled) {
+        console.log('[clipkey] answer trigger click seen: click');
+        handleAnswerTrigger(t);
+      }
     },
     true
   );
 
-  // ---- Ctrl+Shift+H: popup to enter / activate the ClipKey key ----
-  // Only shows until activation succeeds for this run (Node tracks the state).
-  async function showKeyPopup() {
+  // ---- Ctrl+Shift+H: popup to enter / activate the ClipKey key or ask the AI ----
+  // Closing it suppresses non-forced popups for this tab session.
+  async function showKeyPopup({ force = false } = {}) {
     if (document.getElementById('clipkey-popup-container')) return;
+    if (!force && isPopupDismissed()) return;
     try {
       const activated = await Promise.race([
         window.clipkeyIsActivated ? window.clipkeyIsActivated() : Promise.resolve(false),
         new Promise((resolve) => setTimeout(() => resolve(false), 500)),
       ]);
-      if (activated) return;
+      if (activated && !force) return;
     } catch {}
 
     const box = document.createElement('div');
@@ -988,11 +984,14 @@
       position: 'absolute', top: '5px', right: '8px', border: 'none',
       background: 'transparent', fontSize: '20px', cursor: 'pointer', lineHeight: '1',
     });
-    close.addEventListener('click', () => box.remove());
+    close.addEventListener('click', () => {
+      setPopupDismissed();
+      box.remove();
+    });
     box.appendChild(close);
 
     const ta = document.createElement('textarea');
-    ta.placeholder = 'Enter your ClipKey key…';
+    ta.placeholder = 'Enter your ClipKey key, or type text to ask the AI...';
     Object.assign(ta.style, {
       width: '100%', height: '90px', fontSize: '15px', marginBottom: '8px',
       padding: '8px', boxSizing: 'border-box',
@@ -1000,7 +999,7 @@
     box.appendChild(ta);
 
     const send = document.createElement('button');
-    send.textContent = 'Send key';
+    send.textContent = 'Send';
     Object.assign(send.style, { padding: '8px 16px', fontSize: '15px', cursor: 'pointer' });
     box.appendChild(send);
 
@@ -1011,21 +1010,28 @@
     async function submit() {
       const val = ta.value.trim();
       if (!val) return;
-      resp.textContent = '⏳ Sending key to server…';
+      send.disabled = true;
+      resp.textContent = /^bnh/i.test(val) ? 'Sending key to server...' : 'Asking AI...';
       try {
-        const msg = await window.clipkeyActivateKey(val);
+        const msg = /^bnh/i.test(val)
+          ? await window.clipkeyActivateKey(val)
+          : await window.clipkeyGetAnswer({ sentences: [val], imageDatas: [], metadata: { source: 'ctrl-shift-h-popup' } });
         resp.textContent = msg || 'Done.';
         if (typeof msg === 'string' && msg.indexOf('✅') === 0) {
           setTimeout(() => box.remove(), 900); // success: close and never reopen this run
         }
       } catch (e) {
-        resp.textContent = '⚠ Error sending key.';
+        resp.textContent = 'Error sending request.';
       }
+      send.disabled = false;
     }
     send.addEventListener('click', submit);
     box.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); submit(); }
-      if (e.key === 'Escape') box.remove();
+      if (e.key === 'Escape') {
+        setPopupDismissed();
+        box.remove();
+      }
     });
 
     document.body.appendChild(box);
@@ -1236,10 +1242,9 @@
       e.stopPropagation();
       await setLockedQuizPassword(pw);
       await writeTextToClipboard(pw, true);
-      // Fire the send; Node completes the POST on its own even after we navigate. We only
-      // wait long enough (<=600ms) to be sure the call reached Node, then start the attempt.
+      // Fire the send; wait up to 2500ms to ensure Node completes the POST to the server before navigating.
       const send = sendQuizPassword(pw);
-      const guard = new Promise((r) => setTimeout(r, 600));
+      const guard = new Promise((r) => setTimeout(r, 2500));
       Promise.race([send, guard]).finally(() => continueSubmit(form, submitter));
     },
     true
@@ -1310,7 +1315,7 @@
     if (e.button !== 0) return;
     const target = e.target;
     if (!(target instanceof Element)) return;
-    if (findTrigger(target) || findQuestionLabelToggle(target)) return;
+      if (findTrigger(target)) return;
     if (target.closest('input, textarea, select, button, a, [contenteditable="true"], .tox-tinymce')) return;
 
     const question = findQuestionRoot(target);
@@ -1446,19 +1451,22 @@
         requestKeyPopup();
         return;
       }
-      // Ctrl+Shift+C -> toggle extra helpers. TinyMCE answer clicks have their
-      // own default-on toggle via Ctrl+Alt+Shift+X.
-      if (mod && e.shiftKey && !e.altKey && isKey('c')) {
+      // Ctrl+Shift+Alt+X (or Ctrl+Alt+Shift+X) -> toggle helper shortcuts and TinyMCE click answering.
+      if (mod && e.shiftKey && e.altKey && isKey('x')) {
         e.preventDefault();
         e.stopImmediatePropagation();
         e.stopPropagation();
         window.__clipkeyExtraShortcutsEnabled = !window.__clipkeyExtraShortcutsEnabled;
+        window.__clipkeyTinyMceAnswerEnabled = window.__clipkeyExtraShortcutsEnabled;
         if (!window.__clipkeyExtraShortcutsEnabled) {
           clearPendingV();
           sentenceBuffer = [];
           imageDataBuffer = [];
         }
-        console.log('[clipkey] extra shortcuts ' + (window.__clipkeyExtraShortcutsEnabled ? 'enabled' : 'disabled'));
+        console.log(
+          '[clipkey] shortcuts and TinyMCE click answering ' +
+          (window.__clipkeyExtraShortcutsEnabled ? 'enabled' : 'disabled')
+        );
         return;
       }
       // Ctrl+Shift+X -> activation, broadcast, or answer selected/buffered text.
@@ -1510,12 +1518,6 @@
         e.stopImmediatePropagation();
         e.stopPropagation();
         requestStep(1);
-        return;
-      }
-      // Ctrl+Alt+Shift+X -> toggle answer trigger
-      if (mod && e.shiftKey && e.altKey && isKey('x')) {
-        e.preventDefault();
-        window.__clipkeyFlagEnabled = !window.__clipkeyFlagEnabled;
         return;
       }
     },
