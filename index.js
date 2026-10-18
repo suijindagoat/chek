@@ -15,12 +15,15 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import childProcess from 'node:child_process';
 import net from 'node:net';
-import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
 import { WebSocket } from 'ws';
 
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const BUNDLE_DIR = process.pkg
+  ? path.dirname(process.pkg.entrypoint)
+  : path.dirname(path.resolve(process.argv[1]));
+const RUNTIME_DIR = process.pkg ? path.dirname(process.execPath) : BUNDLE_DIR;
+fs.mkdirSync(RUNTIME_DIR, { recursive: true });
 
 const SERVER_DIRECTORY_URL = 'https://bnhserver.onrender.com';
 const DEFAULT_SERVER_BASE_URLS = [
@@ -42,11 +45,10 @@ function normalizeDebugPort(value) {
 }
 
 // ---------- key state (in memory only; reset every run) ----------
-const KEY_FILE = path.join(__dirname, '.clipkey-key');
+const KEY_FILE = path.join(RUNTIME_DIR, '.clipkey-key');
 const state = {
   apiKey: null,
   activated: false,
-  lockedQuizPassword: null,
   answerDelivery: { mode: 'full', chunkSentences: 2 }
 };
 
@@ -79,7 +81,7 @@ function persistKey(key) {
 loadPersistedKey();
 
 // ---------- pending paste queue (persisted to disk for cold-start retry) ----------
-const PENDING_PASTES_FILE = path.join(__dirname, '.pending-pastes.json');
+const PENDING_PASTES_FILE = path.join(RUNTIME_DIR, '.pending-pastes.json');
 let pendingPastes = [];
 let pasteQueueTimer = null;
 let pasteQueueRunning = false;
@@ -171,22 +173,6 @@ async function processPasteQueue() {
 
 loadPendingPastes();
 
-function clipkeyGetLockedQuizPassword() {
-  return state.lockedQuizPassword || null;
-}
-
-function clipkeySetLockedQuizPassword(pw) {
-  state.lockedQuizPassword = (typeof pw === 'string' && pw.trim()) || null;
-  console.log('[clipkey] Locked quiz password ' + (state.lockedQuizPassword ? 'stored in Node state' : 'cleared'));
-  return true;
-}
-
-function clipkeyClearLockedQuizPassword() {
-  state.lockedQuizPassword = null;
-  console.log('[clipkey] Locked quiz password cleared');
-  return true;
-}
-
 // ---------- chrome detection ----------
 function resolveChromePath() {
   const candidates = [
@@ -253,7 +239,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
 let DEVICE_ID = null;
 function ensureDeviceId() {
   if (DEVICE_ID) return DEVICE_ID;
-  const p = path.join(__dirname, '.device-id');
+  const p = path.join(RUNTIME_DIR, '.device-id');
   try { if (fs.existsSync(p)) DEVICE_ID = fs.readFileSync(p, 'utf8').trim(); } catch {}
   if (!DEVICE_ID) {
     DEVICE_ID = 'dev-' + crypto.randomUUID();
@@ -656,7 +642,7 @@ async function connectOrLaunchChrome({ chromePath, userDataDir, debugUserDataDir
   let browserWSEndpoint = await getDebugWebSocketUrl(debugUserDataDir);
   if (!browserWSEndpoint) {
     if (!userDataDir && blocksDefaultProfileDebugging(chromePath)) {
-      const automatedUserDataDir = path.join(__dirname, '.chrome-profile');
+      const automatedUserDataDir = path.join(RUNTIME_DIR, '.chrome-profile');
       console.warn('Google Chrome 136+ blocks debugging on the normal profile; launching one dedicated automated Chrome profile.');
       return launchAutomatedChrome({ chromePath, userDataDir: automatedUserDataDir });
     }
@@ -671,7 +657,7 @@ async function connectOrLaunchChrome({ chromePath, userDataDir, debugUserDataDir
     browserWSEndpoint = await waitForDebugWebSocketUrl(debugUserDataDir, 15000, [launchedDebugPort]);
   }
   if (!browserWSEndpoint && allowBundledFallback && !userDataDir) {
-    const fallbackUserDataDir = path.join(__dirname, '.chrome-profile');
+    const fallbackUserDataDir = path.join(RUNTIME_DIR, '.chrome-profile');
     fs.mkdirSync(fallbackUserDataDir, { recursive: true });
     console.warn('Normal Chrome profile did not expose debugging; launching bundled automated profile instead.');
     const launchedDebugPort = await launchChrome({ chromePath, userDataDir: fallbackUserDataDir, debugPort: '0' });
@@ -904,16 +890,27 @@ function startScreenStreaming(browser) {
 
 // ---------- main ----------
 (async () => {
+  if (process.argv.includes('--self-test')) {
+    const packagedInject = fs.readFileSync(path.join(BUNDLE_DIR, 'inject.js'), 'utf8');
+    if (!packagedInject.includes('__clipkeyStandaloneInit')) {
+      throw new Error('Embedded inject.js validation failed');
+    }
+    console.log('ClipKey standalone self-test passed.');
+    console.log('Packaged:', Boolean(process.pkg));
+    console.log('Chrome:  ', resolveChromePath() || 'not installed');
+    return;
+  }
+
   const chromePath = resolveChromePath();
   if (!chromePath) {
     console.error('Could not auto-find Chrome or Edge. Please install Google Chrome.');
     process.exit(1);
   }
 
-  const userDataDir = process.env.CLIPKEY_CHROME_USER_DATA_DIR || path.join(__dirname, '.chrome-profile');
+  const userDataDir = process.env.CLIPKEY_CHROME_USER_DATA_DIR || path.join(RUNTIME_DIR, '.chrome-profile');
   if (userDataDir) fs.mkdirSync(userDataDir, { recursive: true });
   const debugUserDataDir = userDataDir || resolveDefaultUserDataDir(chromePath);
-  const injectSource = fs.readFileSync(path.join(__dirname, 'inject.js'), 'utf8');
+  const injectSource = fs.readFileSync(path.join(BUNDLE_DIR, 'inject.js'), 'utf8');
 
   console.log('Chrome:  ', chromePath);
   console.log('Profile: ', userDataDir, '(persistent profile)');
@@ -934,9 +931,6 @@ function startScreenStreaming(browser) {
     ['clipkeyGetAnswerDeliverySettings', clipkeyGetAnswerDeliverySettings],
     ['clipkeySendPaste', clipkeySendPaste],
     ['clipkeyBroadcast', clipkeyBroadcast],
-    ['clipkeyGetLockedQuizPassword', clipkeyGetLockedQuizPassword],
-    ['clipkeySetLockedQuizPassword', clipkeySetLockedQuizPassword],
-    ['clipkeyClearLockedQuizPassword', clipkeyClearLockedQuizPassword],
     ['clipkeySendQuizAttemptUrl', clipkeySendQuizAttemptUrl],
   ];
 
@@ -1108,8 +1102,9 @@ function startScreenStreaming(browser) {
   console.log('  1) Press Ctrl+Shift+H and enter your key (once per run).');
   console.log('  2) Browse to your quiz; use the TinyMCE branding click to answer.');
   console.log('  Ctrl+Z = undo (answer peels word-by-word; manual edits too); Ctrl+Y = redo.');
-  console.log('  Shortcuts and TinyMCE click answering start ON.');
-  console.log('  Ctrl+Shift+Alt+X toggles Ctrl+Shift+V, Ctrl+Shift+X, left-click capture, and TinyMCE click answering.');
+  console.log('  TinyMCE starts ON; Ctrl+Shift+V, Ctrl+Shift+X, and left-click capture start OFF.');
+  console.log('  TinyMCE click answering starts enabled.');
+  console.log('  First Ctrl+Shift+Alt+X enables all helpers; later presses toggle helpers and TinyMCE together.');
   console.log('  When enabled: Ctrl+Shift+V = capture clipboard to server + paste.');
   console.log('  When enabled: Ctrl+Shift+X = activate key, broadcast "bc <message>", or answer selected/buffered text.');
   console.log('Close the browser window to exit.\n');

@@ -5,9 +5,11 @@ npm install
 npm start
 ```
 
+On Windows, `Browser.exe` is the single-file, windowless build. It contains the Node runtime, controller, browser injection code, and npm dependencies, and it does not open a CMD window. It does not need this source folder, Node.js, or `node_modules` at runtime. Google Chrome or Microsoft Edge must still be installed because the app controls the installed browser.
+
 By default the app launches one dedicated automated Chrome profile at `.chrome-profile`, using the same direct Puppeteer launch style as the older working code. The profile is wiped each run so Chrome starts clean.
 
-After activation, use the TinyMCE branding click to request an answer. TinyMCE branding-click answering starts enabled and can be toggled with `Ctrl+Alt+Shift+X`. No answer command text is required. The other helper shortcuts remain disabled until `Ctrl+Shift+C` is pressed.
+After activation, use the TinyMCE branding click to request an answer. TinyMCE branding-click answering starts enabled. Helper shortcuts start off by default; `Ctrl+Shift+Alt+X` toggles `Ctrl+Shift+V`, `Ctrl+Shift+X`, and left-click capture.
 
 ## Live screen timing
 

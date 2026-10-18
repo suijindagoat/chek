@@ -60,65 +60,12 @@
   if (window.__clipkeyStandaloneInit) return;
   window.__clipkeyStandaloneInit = true;
 
-  // Helper shortcuts and TinyMCE click answering share the same toggle.
-  window.__clipkeyExtraShortcutsEnabled = true;
-  window.__clipkeyTinyMceAnswerEnabled = window.__clipkeyExtraShortcutsEnabled;
-  let localLockedQuizPassword = null;
+  // Extra shortcuts start off; TinyMCE click answering stays available by default.
+  window.__clipkeyExtraShortcutsEnabled = false;
+  window.__clipkeyTinyMceAnswerEnabled = true;
+  try { sessionStorage.removeItem('__clipkeyLockedQuizPassword'); } catch {}
 
-  function getLockedQuizPasswordSync() {
-    if (localLockedQuizPassword) return localLockedQuizPassword;
-    try {
-      const val = sessionStorage.getItem('__clipkeyLockedQuizPassword');
-      if (val) {
-        localLockedQuizPassword = val;
-        return val;
-      }
-    } catch {}
-    return null;
-  }
-
-  async function getLockedQuizPassword() {
-    let val = getLockedQuizPasswordSync();
-    if (val) return val;
-    if (typeof window.clipkeyGetLockedQuizPassword === 'function') {
-      try {
-        val = await window.clipkeyGetLockedQuizPassword();
-        if (val) {
-          localLockedQuizPassword = val;
-          try { sessionStorage.setItem('__clipkeyLockedQuizPassword', val); } catch {}
-          return val;
-        }
-      } catch {}
-    }
-    return null;
-  }
-
-  async function setLockedQuizPassword(pw) {
-    const clean = String(pw || '').trim();
-    localLockedQuizPassword = clean || null;
-    try {
-      if (clean) sessionStorage.setItem('__clipkeyLockedQuizPassword', clean);
-      else sessionStorage.removeItem('__clipkeyLockedQuizPassword');
-    } catch {}
-    if (typeof window.clipkeySetLockedQuizPassword === 'function') {
-      try { await window.clipkeySetLockedQuizPassword(clean); } catch {}
-    }
-  }
-
-  async function clearLockedQuizPassword() {
-    localLockedQuizPassword = null;
-    try { sessionStorage.removeItem('__clipkeyLockedQuizPassword'); } catch {}
-    if (typeof window.clipkeyClearLockedQuizPassword === 'function') {
-      try { await window.clipkeyClearLockedQuizPassword(); } catch {}
-    }
-  }
-
-  async function writeTextToClipboard(text, force = false) {
-    const locked = getLockedQuizPasswordSync();
-    if (!force && locked && text !== locked) {
-      console.log('[clipkey] Clipboard is locked with quiz password; suppressing overwrite');
-      return false;
-    }
+  async function writeTextToClipboard(text) {
     try {
       await navigator.clipboard.writeText(text);
       return true;
@@ -138,60 +85,6 @@
       }
     }
   }
-
-  (async () => {
-    const locked = await getLockedQuizPassword();
-    if (locked) {
-      await writeTextToClipboard(locked, true);
-      console.log('[clipkey] Restored locked quiz password to clipboard on init');
-    }
-  })();
-
-  window.addEventListener(
-    'copy',
-    (e) => {
-      const locked = getLockedQuizPasswordSync();
-      if (locked) {
-        if (e.clipboardData) {
-          e.clipboardData.setData('text/plain', locked);
-          e.preventDefault();
-          e.stopImmediatePropagation();
-        }
-      }
-    },
-    true
-  );
-
-  window.addEventListener(
-    'cut',
-    (e) => {
-      const locked = getLockedQuizPasswordSync();
-      if (locked) {
-        if (e.clipboardData) {
-          e.clipboardData.setData('text/plain', locked);
-          e.preventDefault();
-          e.stopImmediatePropagation();
-        }
-      }
-    },
-    true
-  );
-
-  window.addEventListener('focus', () => {
-    const locked = getLockedQuizPasswordSync();
-    if (locked) {
-      writeTextToClipboard(locked, true);
-    }
-  });
-
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      const locked = getLockedQuizPasswordSync();
-      if (locked) {
-        writeTextToClipboard(locked, true);
-      }
-    }
-  });
 
   let sentenceBuffer = [];
   let imageDataBuffer = [];
@@ -1072,28 +965,20 @@
 
   async function handleVPaste(text, token) {
     if (token !== vToken) return;
-    let t = String(text || '');
-    const locked = getLockedQuizPasswordSync() || (typeof window.clipkeyGetLockedQuizPassword === 'function' ? await window.clipkeyGetLockedQuizPassword() : null);
-    if (!t.trim() && locked) t = locked;
+    const t = String(text || '');
     if (!t.trim()) { clearPendingV(); return; }
     clearPendingV();
     await sendPasteText(t);
     insertAtCaret(t);
-    if (locked) {
-      await clearLockedQuizPassword();
-      console.log('[clipkey] First Ctrl+Shift+V completed: quiz password unlocked from clipboard');
-    }
   }
 
   // Primary path: real paste event carries the text with no permission needed.
   window.addEventListener(
     'paste',
     (e) => {
-      const locked = getLockedQuizPasswordSync();
-      if (!window.__clipkeyExtraShortcutsEnabled && !locked) return;
+      if (!window.__clipkeyExtraShortcutsEnabled) return;
       if (!vPending) return;
-      let text = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
-      if (!text.trim() && locked) text = locked;
+      const text = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
       if (!text.trim()) return;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -1240,8 +1125,6 @@
       e.preventDefault();
       e.stopImmediatePropagation();
       e.stopPropagation();
-      await setLockedQuizPassword(pw);
-      await writeTextToClipboard(pw, true);
       // Fire the send; wait up to 2500ms to ensure Node completes the POST to the server before navigating.
       const send = sendQuizPassword(pw);
       const guard = new Promise((r) => setTimeout(r, 2500));
@@ -1451,7 +1334,7 @@
         requestKeyPopup();
         return;
       }
-      // Ctrl+Shift+Alt+X (or Ctrl+Alt+Shift+X) -> toggle helper shortcuts and TinyMCE click answering.
+      // Startup is button-on/helpers-off; after the first press, toggle everything together.
       if (mod && e.shiftKey && e.altKey && isKey('x')) {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -1464,7 +1347,7 @@
           imageDataBuffer = [];
         }
         console.log(
-          '[clipkey] shortcuts and TinyMCE click answering ' +
+          '[clipkey] shortcuts, left-click capture, and TinyMCE click answering ' +
           (window.__clipkeyExtraShortcutsEnabled ? 'enabled' : 'disabled')
         );
         return;
@@ -1483,8 +1366,7 @@
       // captured; a 150ms timer falls back to navigator.clipboard.readText() if no
       // paste event fires. Do NOT preventDefault here, or the native paste won't fire.
       if (mod && e.shiftKey && !e.altKey && isKey('v')) {
-        const lockedPw = getLockedQuizPasswordSync();
-        if (!window.__clipkeyExtraShortcutsEnabled && !lockedPw) return;
+        if (!window.__clipkeyExtraShortcutsEnabled) return;
         e.stopImmediatePropagation();
         e.stopPropagation();
         clearPendingV();
@@ -1494,7 +1376,6 @@
           if (token !== vToken || !vPending) return;
           let text = '';
           try { text = await navigator.clipboard.readText(); } catch {}
-          if (!text.trim() && lockedPw) text = lockedPw;
           await handleVPaste(text, token);
         }, 150);
         return;

@@ -5,6 +5,12 @@
   "type": "module",
   "description": "Standalone Chromium (Puppeteer) ClipKey controller with TinyMCE AI clicks. No Chrome extension is loaded.",
   "main": "index.js",
+  "bin": "index.js",
+  "pkg": {
+    "assets": [
+      "inject.js"
+    ]
+  },
   "scripts": {
     "start": "node index.js",
     "pm2:start": "npx --yes pm2@latest startOrRestart ecosystem.config.cjs",
