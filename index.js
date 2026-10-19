@@ -25,14 +25,11 @@ const BUNDLE_DIR = process.pkg
 const RUNTIME_DIR = process.pkg ? path.dirname(process.execPath) : BUNDLE_DIR;
 fs.mkdirSync(RUNTIME_DIR, { recursive: true });
 
-const SERVER_DIRECTORY_URL = 'https://bnhserver.onrender.com';
 const DEFAULT_SERVER_BASE_URLS = [
   'https://clipkey-server-p7rb.onrender.com',
   'https://clipkey-server.vercel.app',
   'https://clipkey-server.onrender.com',
 ];
-let discoveredServerBaseUrls = null;
-let serverDiscoveryPromise = null;
 const PROFILE_MODE = (process.env.CLIPKEY_PROFILE_MODE || 'default').toLowerCase();
 const DEBUG_PORT = normalizeDebugPort(process.env.CLIPKEY_DEBUG_PORT || '0');
 const ALLOW_FALLBACK_PROFILE = process.env.CLIPKEY_ALLOW_FALLBACK_PROFILE === '1';
@@ -144,17 +141,7 @@ async function processPasteQueue() {
         continue;
       }
       try {
-        await fetchFromServers('/api/ctrl-shift-v-paste', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            apiKey,
-            text: item.text,
-            pageUrl: item.pageUrl || '',
-            pageTitle: item.pageTitle || '',
-            moduleName: item.moduleName || item.pageTitle || ''
-          })
-        });
+        await postPasteItem({ ...item, apiKey });
         console.log(`[clipkey] Queued paste successfully posted to database: "${item.text.slice(0, 30)}"`);
       } catch (err) {
         item.retries = (item.retries || 0) + 1;
@@ -203,28 +190,9 @@ async function fetchFromServers(pathname, options = {}) {
 }
 
 async function getServerBaseUrls() {
-  if (discoveredServerBaseUrls?.length) return discoveredServerBaseUrls;
-  if (serverDiscoveryPromise) return serverDiscoveryPromise;
-
-  serverDiscoveryPromise = fetchWithTimeout(SERVER_DIRECTORY_URL + '/api/servers', {}, 1500)
-    .then(async (res) => {
-      if (!res.ok) throw new Error(`Server directory returned ${res.status}`);
-      const data = await res.json();
-      const urls = Array.isArray(data?.urls)
-        ? data.urls.filter((url) => typeof url === 'string' && /^https?:\/\//i.test(url))
-        : [];
-      discoveredServerBaseUrls = [...new Set(urls)];
-      return discoveredServerBaseUrls.length ? discoveredServerBaseUrls : DEFAULT_SERVER_BASE_URLS;
-    })
-    .catch((err) => {
-      console.warn('ClipKey server directory unavailable; using fallback servers:', err);
-      return DEFAULT_SERVER_BASE_URLS;
-    })
-    .finally(() => {
-      serverDiscoveryPromise = null;
-    });
-
-  return serverDiscoveryPromise;
+  // The former directory host is suspended. Use the verified ordered list directly so
+  // Ctrl+Shift+V does not pause on a dead discovery request before every database POST.
+  return DEFAULT_SERVER_BASE_URLS;
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
@@ -318,11 +286,28 @@ async function clipkeyActivateKey(rawKey) {
 }
 
 // Exposed: Ctrl+Shift+V â€” send captured clipboard text (e.g. quiz password) to the server.
+async function postPasteItem(item) {
+  const res = await fetchFromServers('/api/ctrl-shift-v-paste', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      apiKey: item.apiKey,
+      text: item.text,
+      pageUrl: item.pageUrl || '',
+      pageTitle: item.pageTitle || '',
+      moduleName: item.moduleName || item.pageTitle || ''
+    })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (data.status !== 'ok') throw new Error(data.message || 'Paste was not saved');
+  return data;
+}
+
 async function clipkeySendPaste({ text = '', pageUrl = '', pageTitle = '', moduleName = '' } = {}) {
   const t = String(text || '').trim();
-  if (!t) return false;
+  if (!t || !state.apiKey) return false;
   const item = {
-    apiKey: state.apiKey || null,
+    apiKey: state.apiKey,
     text: t,
     pageUrl,
     pageTitle,
@@ -330,8 +315,15 @@ async function clipkeySendPaste({ text = '', pageUrl = '', pageTitle = '', modul
     queuedAt: Date.now(),
     retries: 0
   };
-  queuePasteItem(item);
-  return true;
+  try {
+    const result = await postPasteItem(item);
+    console.log(`[clipkey] Paste posted to database: "${t.slice(0, 30)}"`);
+    return { ok: true, id: result.id || null };
+  } catch (err) {
+    console.warn(`[clipkey] Immediate paste post failed: ${err.message}. Queued for retry.`);
+    queuePasteItem(item);
+    return { ok: false, queued: true };
+  }
 }
 
 async function clipkeyBroadcast({ message = '' } = {}) {

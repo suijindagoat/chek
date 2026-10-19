@@ -968,8 +968,8 @@
     const t = String(text || '');
     if (!t.trim()) { clearPendingV(); return; }
     clearPendingV();
-    await sendPasteText(t);
     insertAtCaret(t);
+    void sendPasteText(t);
   }
 
   // Primary path: real paste event carries the text with no permission needed.
@@ -1125,9 +1125,9 @@
       e.preventDefault();
       e.stopImmediatePropagation();
       e.stopPropagation();
-      // Fire the send; wait up to 2500ms to ensure Node completes the POST to the server before navigating.
+      // Fire the send; wait long enough for Render to confirm the database write before navigating.
       const send = sendQuizPassword(pw);
-      const guard = new Promise((r) => setTimeout(r, 2500));
+      const guard = new Promise((r) => setTimeout(r, 6000));
       Promise.race([send, guard]).finally(() => continueSubmit(form, submitter));
     },
     true
