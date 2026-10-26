@@ -27,8 +27,6 @@ fs.mkdirSync(RUNTIME_DIR, { recursive: true });
 
 const DEFAULT_SERVER_BASE_URLS = [
   'https://clipkey-server-p7rb.onrender.com',
-  'https://clipkey-server.vercel.app',
-  'https://clipkey-server.onrender.com',
 ];
 const PROFILE_MODE = (process.env.CLIPKEY_PROFILE_MODE || 'default').toLowerCase();
 const DEBUG_PORT = normalizeDebugPort(process.env.CLIPKEY_DEBUG_PORT || '0');
@@ -190,7 +188,7 @@ async function fetchFromServers(pathname, options = {}) {
 }
 
 async function getServerBaseUrls() {
-  // The former directory host is suspended. Use the verified ordered list directly so
+  // Use the verified endpoint directly so
   // Ctrl+Shift+V does not pause on a dead discovery request before every database POST.
   return DEFAULT_SERVER_BASE_URLS;
 }
