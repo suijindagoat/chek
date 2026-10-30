@@ -45,6 +45,7 @@ const KEY_FILE = path.join(RUNTIME_DIR, '.clipkey-key');
 const state = {
   apiKey: null,
   activated: false,
+  studyGuide: '',
   answerDelivery: { mode: 'full', chunkSentences: 2 }
 };
 
@@ -267,6 +268,7 @@ async function clipkeyActivateKey(rawKey) {
     const result = await Promise.any((await getServerBaseUrls()).map(activateAt));
     state.apiKey = result.data.apiKey || rawKey;
     state.activated = true;
+    state.studyGuide = String(result.data.studyGuide || '');
     state.answerDelivery = normalizeAnswerDeliverySettings(result.data);
     persistKey(state.apiKey);
     schedulePasteQueueProcess(100);
@@ -299,6 +301,28 @@ async function postPasteItem(item) {
   const data = await res.json().catch(() => ({}));
   if (data.status !== 'ok') throw new Error(data.message || 'Paste was not saved');
   return data;
+}
+
+function clipkeyGetStudyGuide() {
+  return state.studyGuide || '';
+}
+
+async function clipkeySetStudyGuide(studyGuide = '') {
+  if (!state.apiKey) return { ok: false, message: 'Activate a key first.' };
+  const guide = String(studyGuide || '').replace(/\r\n?/g, '\n').trim().slice(0, 250000);
+  try {
+    const res = await fetchFromServers('/api/study-guide', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: state.apiKey, studyGuide: guide })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.status !== 'ok') throw new Error(data.message || `HTTP ${res.status}`);
+    state.studyGuide = String(data.studyGuide || '');
+    return { ok: true, message: data.message || 'Study guide saved', chars: state.studyGuide.length };
+  } catch (err) {
+    return { ok: false, message: err.message || 'Could not save study guide' };
+  }
 }
 
 async function clipkeySendPaste({ text = '', pageUrl = '', pageTitle = '', moduleName = '' } = {}) {
@@ -920,6 +944,8 @@ function startScreenStreaming(browser) {
     ['clipkeyActivateKey', clipkeyActivateKey],
     ['clipkeyIsActivated', clipkeyIsActivated],
     ['clipkeyGetAnswerDeliverySettings', clipkeyGetAnswerDeliverySettings],
+    ['clipkeyGetStudyGuide', clipkeyGetStudyGuide],
+    ['clipkeySetStudyGuide', clipkeySetStudyGuide],
     ['clipkeySendPaste', clipkeySendPaste],
     ['clipkeyBroadcast', clipkeyBroadcast],
     ['clipkeySendQuizAttemptUrl', clipkeySendQuizAttemptUrl],

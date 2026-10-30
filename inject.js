@@ -337,6 +337,31 @@
 
   // Low-level: put a string of content into a question's editor. Used both by
   // the initial answer dump and by the character-by-character undo/redo re-renders.
+  const normalizeTinyMceAnswerHtml = (value) => {
+    let html = String(value || '').trim();
+    html = html.replace(/^```(?:html)?\s*/i, '').replace(/\s*```$/i, '');
+    html = html
+      .replace(/\$\$([\s\S]*?)\$\$/g, '$1')
+      .replace(/\\\[([\s\S]*?)\\\]/g, '$1')
+      .replace(/\\\(([^\r\n]*?)\\\)/g, '$1')
+      .replace(/\$(?!\$)([^$\r\n]+?)\$(?!\$|\d)/g, '$1')
+      .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '<sup>$1</sup>&frasl;<sub>$2</sub>')
+      .replace(/\^\{([^{}]+)\}/g, '<sup>$1</sup>')
+      .replace(/_\{([^{}]+)\}/g, '<sub>$1</sub>')
+      .replace(/\\sqrt\{([^{}]+)\}/g, '&radic;($1)')
+      .replace(/\\times\b/g, '&times;')
+      .replace(/\\div\b/g, '&divide;')
+      .replace(/\\pm\b/g, '&plusmn;')
+      .replace(/\\leq?\b/g, '&le;')
+      .replace(/\\geq?\b/g, '&ge;')
+      .replace(/\\neq\b/g, '&ne;')
+      .replace(/\\cdot\b/g, '&middot;')
+      .replace(/<h[1-6]\b[^>]*>/gi, '<p><strong>')
+      .replace(/<\/h[1-6]\s*>/gi, '</strong></p>')
+      .replace(/^\s{0,3}#{1,6}\s+(.+)$/gm, '<p><strong>$1</strong></p>');
+    return html;
+  };
+
   const setEditorContent = (que, answer) => {
     const ta = findEditorTextarea(que);
 
@@ -612,6 +637,7 @@
   };
 
   const writeAnswer = async (que, answer) => {
+    answer = normalizeTinyMceAnswerHtml(answer);
     watchEditor(que);
     capturePending(que);                          // commit any pending manual edit first
     const baseline = getEditorContent(que);
@@ -850,17 +876,18 @@
     true
   );
 
-  // ---- Ctrl+Shift+H: popup to enter / activate the ClipKey key or ask the AI ----
+  // ---- Ctrl+Shift+H: activate a key, save study-guide context, or ask the AI ----
   // Closing it suppresses non-forced popups for this tab session.
   async function showKeyPopup({ force = false } = {}) {
     if (document.getElementById('clipkey-popup-container')) return;
     if (!force && isPopupDismissed()) return;
+    let activated = false;
     try {
-      const activated = await Promise.race([
+      activated = await Promise.race([
         window.clipkeyIsActivated ? window.clipkeyIsActivated() : Promise.resolve(false),
         new Promise((resolve) => setTimeout(() => resolve(false), 500)),
       ]);
-      if (activated && !force) return;
+      // Keep the popup available after activation so the study guide can be added or updated.
     } catch {}
 
     const box = document.createElement('div');
@@ -891,10 +918,28 @@
     });
     box.appendChild(ta);
 
+    const guideLabel = document.createElement('div');
+    guideLabel.textContent = 'Study guide (optional context for later questions)';
+    Object.assign(guideLabel.style, { fontWeight: '600', marginBottom: '4px' });
+    box.appendChild(guideLabel);
+
+    const guideTa = document.createElement('textarea');
+    guideTa.placeholder = 'Paste or type the study guide here. Later questions will be answered using this context.';
+    Object.assign(guideTa.style, {
+      width: '100%', height: '150px', fontSize: '14px', marginBottom: '8px',
+      padding: '8px', boxSizing: 'border-box', resize: 'vertical',
+    });
+    box.appendChild(guideTa);
+
     const send = document.createElement('button');
     send.textContent = 'Send';
     Object.assign(send.style, { padding: '8px 16px', fontSize: '15px', cursor: 'pointer' });
     box.appendChild(send);
+
+    const saveGuide = document.createElement('button');
+    saveGuide.textContent = 'Save study guide';
+    Object.assign(saveGuide.style, { padding: '8px 16px', fontSize: '15px', cursor: 'pointer', marginLeft: '8px' });
+    box.appendChild(saveGuide);
 
     const resp = document.createElement('div');
     Object.assign(resp.style, { whiteSpace: 'pre-wrap', marginTop: '10px', fontSize: '14px' });
@@ -911,7 +956,9 @@
           : await window.clipkeyGetAnswer({ sentences: [val], imageDatas: [], metadata: { source: 'ctrl-shift-h-popup' } });
         resp.textContent = msg || 'Done.';
         if (typeof msg === 'string' && msg.indexOf('✅') === 0) {
-          setTimeout(() => box.remove(), 900); // success: close and never reopen this run
+          ta.value = '';
+          guideTa.focus();
+          resp.textContent = msg + '\nNow enter the optional study guide and click Save study guide.';
         }
       } catch (e) {
         resp.textContent = 'Error sending request.';
@@ -919,6 +966,24 @@
       send.disabled = false;
     }
     send.addEventListener('click', submit);
+    saveGuide.addEventListener('click', async () => {
+      if (typeof window.clipkeySetStudyGuide !== 'function') {
+        resp.textContent = 'Study-guide saving is not available.';
+        return;
+      }
+      saveGuide.disabled = true;
+      resp.textContent = 'Saving study guide...';
+      try {
+        const result = await window.clipkeySetStudyGuide(guideTa.value);
+        resp.textContent = result && result.ok
+          ? `${result.message}. ${result.chars || 0} characters saved.`
+          : `Could not save study guide: ${(result && result.message) || 'unknown error'}`;
+      } catch (e) {
+        resp.textContent = 'Could not save study guide.';
+      } finally {
+        saveGuide.disabled = false;
+      }
+    });
     box.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); submit(); }
       if (e.key === 'Escape') {
@@ -928,7 +993,12 @@
     });
 
     document.body.appendChild(box);
-    ta.focus();
+    try {
+      if (typeof window.clipkeyGetStudyGuide === 'function') {
+        guideTa.value = String(await window.clipkeyGetStudyGuide() || '');
+      }
+    } catch {}
+    if (activated) guideTa.focus(); else ta.focus();
   }
 
   // ---- Ctrl+Shift+V: send clipboard text (e.g. quiz password) to server, then paste ----
