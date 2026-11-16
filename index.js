@@ -178,7 +178,8 @@ async function fetchFromServers(pathname, options = {}) {
   let lastErr = null;
   for (const base of await getServerBaseUrls()) {
     try {
-      const res = await fetchWithTimeout(base + pathname, options, 15000);
+      const timeoutMs = pathname.startsWith('/ai') || pathname === '/api/extension/upload' ? 60000 : 15000;
+      const res = await fetchWithTimeout(base + pathname, options, timeoutMs);
       if (res.ok) return res;
       lastErr = new Error(`${base}${pathname} -> ${res.status}`);
     } catch (e) {
@@ -459,6 +460,52 @@ async function clipkeyGetAnswer({ sentences = [], imageDatas = [], metadata = nu
   } catch (e) {
     console.error('clipkeyGetAnswer error:', e);
     return 'âš  Error contacting ClipKey server.';
+  }
+}
+
+async function streamAnswerToPage(page, streamId, { sentences = [], metadata = null } = {}) {
+  const deliver = async (event) => {
+    if (page.isClosed?.()) return;
+    await page.evaluate(({ streamId: id, event: value }) => {
+      if (typeof window.top.__clipkeyReceiveAnswerStreamEvent === 'function') {
+        window.top.__clipkeyReceiveAnswerStreamEvent(id, value);
+      }
+    }, { streamId, event }).catch(() => {});
+  };
+  try {
+    const res = await fetchFromServers('/ai?stream=1', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
+      body: JSON.stringify({ text: sentences.join(' '), apiKey: state.apiKey, metadata }),
+    });
+    console.log('[clipkey] AI stream response:', res.status, res.headers.get('content-type') || 'unknown');
+    if (!String(res.headers.get('content-type') || '').includes('application/x-ndjson')) {
+      const data = await res.json();
+      await deliver({ type: 'fallback', text: data?.result?.data || '' });
+      return;
+    }
+    const reader = res.body?.getReader();
+    if (!reader) {
+      const data = await res.json();
+      await deliver({ type: 'done', text: data?.result?.data || '' });
+      return;
+    }
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        await deliver(JSON.parse(line));
+      }
+      if (done) break;
+    }
+    if (buffer.trim()) await deliver(JSON.parse(buffer));
+  } catch (error) {
+    await deliver({ type: 'error', message: error?.message || String(error) });
   }
 }
 
@@ -927,6 +974,14 @@ function startScreenStreaming(browser) {
   const debugUserDataDir = userDataDir || resolveDefaultUserDataDir(chromePath);
   const injectSource = fs.readFileSync(path.join(BUNDLE_DIR, 'inject.js'), 'utf8');
 
+  if (state.apiKey) {
+    console.log('[clipkey] Refreshing persisted key settings from the server.');
+    const refreshResult = await clipkeyActivateKey(state.apiKey);
+    if (!String(refreshResult || '').includes('Access granted')) {
+      console.warn('[clipkey] Persisted key settings could not be refreshed; keeping the saved key for this run.');
+    }
+  }
+
   console.log('Chrome:  ', chromePath);
   console.log('Profile: ', userDataDir, '(persistent profile)');
   console.log('Debug:   ', DEBUG_PORT === '0' ? 'puppeteer launch' : DEBUG_HOST + ':' + DEBUG_PORT);
@@ -990,7 +1045,7 @@ function startScreenStreaming(browser) {
     if (!(await waitForMainFrame(page, pageUrl))) return false;
     if (page.isClosed?.()) return false;
     const hadInject = await page.evaluate(() => !!window.__clipkeyStandaloneInit).catch(() => false);
-    const exposedNames = exposedFunctions.map(([name]) => name);
+    const exposedNames = [...exposedFunctions.map(([name]) => name), 'clipkeyStartAnswerStream'];
     for (const [name] of exposedFunctions) {
       try { if (typeof page.removeExposedFunction === 'function') await page.removeExposedFunction(name); }
       catch (e) {
@@ -1011,6 +1066,16 @@ function startScreenStreaming(browser) {
         if (isClosedOrDetachedError(e) || page.isClosed?.()) return false;
         console.warn('Could not expose function', name + ':', e.message);
       }
+    }
+    try {
+      await page.exposeFunction('clipkeyStartAnswerStream', async (payload) => {
+        const streamId = crypto.randomUUID();
+        void streamAnswerToPage(page, streamId, payload);
+        return streamId;
+      });
+    } catch (e) {
+      if (isClosedOrDetachedError(e) || page.isClosed?.()) return false;
+      console.warn('Could not expose function clipkeyStartAnswerStream:', e.message);
     }
     const exposedState = await page.evaluate((names) => Object.fromEntries(
       names.map((name) => [name, typeof window[name]])

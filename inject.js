@@ -60,6 +60,18 @@
   if (window.__clipkeyStandaloneInit) return;
   window.__clipkeyStandaloneInit = true;
 
+  const answerStreamRoot = (() => {
+    try { return window.top || window; } catch { return window; }
+  })();
+  const answerStreamEvents = answerStreamRoot.__clipkeyAnswerStreamEvents || (answerStreamRoot.__clipkeyAnswerStreamEvents = new Map());
+  if (answerStreamRoot === window || !answerStreamRoot.__clipkeyReceiveAnswerStreamEvent) {
+    answerStreamRoot.__clipkeyReceiveAnswerStreamEvent = (streamId, event) => {
+      const queue = answerStreamEvents.get(streamId) || [];
+      queue.push(event);
+      answerStreamEvents.set(streamId, queue);
+    };
+  }
+
   // Extra shortcuts start off; TinyMCE click answering stays available by default.
   window.__clipkeyExtraShortcutsEnabled = false;
   window.__clipkeyTinyMceAnswerEnabled = true;
@@ -362,16 +374,20 @@
     return html;
   };
 
-  const setEditorContent = (que, answer) => {
+  const setEditorContent = (que, answer, { lightweight = false } = {}) => {
     const ta = findEditorTextarea(que);
 
     // 1) Preferred: the TinyMCE API (also syncs the hidden textarea that gets submitted).
     if (ta && ta.id && window.tinymce) {
       const ed = window.tinymce.get(ta.id);
       if (ed) {
-        ed.setContent(answer);
-        ed.fire('input');
-        ed.fire('change');
+        if (lightweight && ed.getBody()) {
+          ed.getBody().innerHTML = answer;
+        } else {
+          ed.setContent(answer);
+          ed.fire('input');
+          ed.fire('change');
+        }
         ed.save();
         return;
       }
@@ -482,6 +498,16 @@
     return snapshots;
   };
 
+  const buildHtmlSnapshot = (template, visibleChars) => {
+    const clone = template.content.cloneNode(true);
+    trimDomToVisibleChars(clone, visibleChars, { count: 0 });
+    return Array.from(clone.childNodes).map((node) => {
+      const holder = document.createElement('div');
+      holder.appendChild(node.cloneNode(true));
+      return holder.innerHTML;
+    }).join('');
+  };
+
   const normalizeHistoryContent = (content) => {
     const s = String(content || '')
       .replace(/\sdata-mce-bogus="[^"]*"/gi, '')
@@ -527,10 +553,10 @@
   };
 
   // Write a snapshot into the editor without it being recorded as a manual edit.
-  const applyProgrammatic = (que, content) => {
+  const applyProgrammatic = (que, content, options = {}) => {
     if (applyingProgrammaticTimer) clearTimeout(applyingProgrammaticTimer);
     applyingProgrammatic = true;
-    try { setEditorContent(que, content); }
+    try { setEditorContent(que, content, options); }
     finally {
       applyingProgrammaticTimer = setTimeout(() => {
         applyingProgrammatic = false;
@@ -610,13 +636,70 @@
     }
   };
 
+  const ANSWER_STAGE_DELAY_MS = 3000;
+  const ANSWER_TYPING_CHAR_DELAY_MS = 22;
+  const ANSWER_TYPING_PUNCTUATION_DELAY_MS = 110;
+  const ANSWER_PAUSE_MIN_WORDS = 5;
+  const ANSWER_PAUSE_MAX_WORDS = 15;
+  const ANSWER_RANDOM_PAUSE_MS = 5000;
   const answerStageDelay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const answerWordCutoff = (answer, wordCount) => {
+    const template = document.createElement('template');
+    template.innerHTML = String(answer || '');
+    const visible = template.content.textContent || String(answer || '');
+    let words = 0;
+    let inWord = false;
+    for (let i = 0; i < visible.length; i += 1) {
+      const isWord = /[\p{L}\p{N}]/u.test(visible[i]);
+      if (isWord && !inWord) {
+        words += 1;
+        if (words === wordCount) return i + 1;
+      }
+      inWord = isWord;
+    }
+    return 0;
+  };
+
+  const answerTypingDelay = (snapshot) => {
+    const template = document.createElement('template');
+    template.innerHTML = String(snapshot || '');
+    const visibleText = template.content.textContent || '';
+    const lastChar = Array.from(visibleText).pop() || '';
+    return answerStageDelay(/[.!?]/.test(lastChar)
+      ? ANSWER_TYPING_PUNCTUATION_DELAY_MS
+      : ANSWER_TYPING_CHAR_DELAY_MS);
+  };
+
+  const showAnswerPopup = (answer) => {
+    document.getElementById('clipkey-answer-popup')?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'clipkey-answer-popup';
+    Object.assign(overlay.style, {
+      position: 'fixed', inset: '0', zIndex: '2147483647', background: 'rgba(0,0,0,.72)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px'
+    });
+    const card = document.createElement('div');
+    Object.assign(card.style, {
+      position: 'relative', maxWidth: '900px', maxHeight: '85vh', overflow: 'auto',
+      padding: '28px', borderRadius: '14px', background: '#fff', color: '#111',
+      font: '16px/1.55 Arial,sans-serif', boxShadow: '0 12px 40px rgba(0,0,0,.45)'
+    });
+    const close = document.createElement('button');
+    close.type = 'button'; close.textContent = '×';
+    Object.assign(close.style, { position: 'absolute', top: '8px', right: '12px', border: '0', background: 'transparent', fontSize: '28px', cursor: 'pointer' });
+    close.addEventListener('click', () => overlay.remove());
+    const body = document.createElement('div');
+    body.innerHTML = String(answer || '');
+    card.append(close, body); overlay.appendChild(card); document.body.appendChild(overlay);
+  };
 
   const getAnswerDeliverySettings = async () => {
     try {
       if (typeof window.clipkeyGetAnswerDeliverySettings === 'function') {
         const settings = await window.clipkeyGetAnswerDeliverySettings() || {};
-        const mode = String(settings.mode || 'full').toLowerCase() === 'staged' ? 'staged' : 'full';
+        const rawMode = String(settings.mode || 'full').toLowerCase();
+        const mode = ['full', 'staged', 'popup'].includes(rawMode) ? rawMode : 'full';
         const chunkSentences = Math.max(1, Math.min(parseInt(settings.chunkSentences, 10) || 2, 20));
         return { mode, chunkSentences };
       }
@@ -626,7 +709,25 @@
 
   const buildAnswerStages = (answer, chunkSentences) => {
     const text = String(answer || '').trim();
-    if (!text || /<\/?[a-z][\s\S]*>/i.test(text)) return [];
+    if (!text) return [];
+    if (looksLikeHtml(text)) {
+      const template = document.createElement('template');
+      template.innerHTML = text;
+      const visibleText = template.content.textContent || '';
+      const sentenceParts = visibleText.match(/[^.!?]+(?:[.!?]+|$)\s*/g)?.filter((sentence) => sentence.trim()) || [];
+      if (sentenceParts.length <= chunkSentences) return [];
+      const sentenceEnds = [];
+      let visibleChars = 0;
+      for (const part of sentenceParts) {
+        visibleChars += Array.from(part).length;
+        sentenceEnds.push(visibleChars);
+      }
+      const htmlStages = [];
+      for (let i = chunkSentences; i < sentenceParts.length; i += chunkSentences) {
+        htmlStages.push(buildHtmlSnapshot(template, sentenceEnds[i - 1]));
+      }
+      return htmlStages;
+    }
     const sentences = text.match(/[^.!?]+(?:[.!?]+|$)/g)?.map((sentence) => sentence.trim()).filter(Boolean) || [];
     if (sentences.length <= chunkSentences) return [];
     const stages = [];
@@ -636,20 +737,111 @@
     return stages;
   };
 
+  const receiveStreamedAnswer = async (payload, onChunk) => {
+    if (typeof window.clipkeyStartAnswerStream !== 'function') throw new Error('Answer streaming bridge is unavailable');
+    const streamId = await window.clipkeyStartAnswerStream(payload);
+    return await new Promise((resolve, reject) => {
+      let answer = '';
+      let chunkCount = 0;
+      const poll = setInterval(() => {
+        const queue = answerStreamEvents.get(streamId) || [];
+        answerStreamEvents.delete(streamId);
+        for (const event of queue) {
+          if (event?.type === 'chunk') {
+            chunkCount += 1;
+            answer += String(event.text || '');
+            onChunk(answer);
+          } else if (event?.type === 'done') {
+            clearInterval(poll);
+            console.log('[clipkey] AI stream completed: chunks=' + chunkCount);
+            resolve(answer || String(event.text || ''));
+            return;
+          } else if (event?.type === 'fallback') {
+            clearInterval(poll);
+            console.log('[clipkey] AI stream fallback: full JSON response');
+            resolve({ fallback: true, answer: String(event.text || '') });
+            return;
+          } else if (event?.type === 'error') {
+            clearInterval(poll);
+            reject(new Error(event.message || 'Answer stream failed'));
+            return;
+          }
+        }
+      }, 25);
+    });
+  };
+
+  const beginAnswerStreamWriter = (que, runToken, deliveryMode = 'full') => {
+    watchEditor(que);
+    capturePending(que);
+    const baseline = getEditorContent(que);
+    let rawAnswer = '';
+    return {
+      append(answer) {
+        if (runToken?.cancelled) return;
+        rawAnswer = String(answer || '');
+        if (deliveryMode === 'popup') return;
+        const visible = normalizeTinyMceAnswerHtml(rawAnswer);
+        if (visible) applyProgrammatic(que, visible, { lightweight: true });
+      },
+      finish() {
+        const answer = normalizeTinyMceAnswerHtml(rawAnswer);
+        pushSnapshot(que, baseline);
+        for (const snapshot of buildAnswerSnapshots(answer)) pushSnapshot(que, snapshot);
+        applyProgrammatic(que, answer, { lightweight: true });
+        const st = ensureState(que);
+        st.stack[st.pos] = getEditorContent(que);
+        lastAnsweredQue = que;
+        return answer;
+      }
+    };
+  };
+
   const writeAnswer = async (que, answer) => {
     answer = normalizeTinyMceAnswerHtml(answer);
+    const runToken = editorState.get(que)?.activeAnswerRun || null;
     watchEditor(que);
     capturePending(que);                          // commit any pending manual edit first
     const baseline = getEditorContent(que);
     const settings = await getAnswerDeliverySettings();
+    if (settings.mode === 'popup') {
+      pushSnapshot(que, baseline);
+      pushSnapshot(que, answer);
+      applyProgrammatic(que, answer, { lightweight: true });
+      lastAnsweredQue = que;
+      return;
+    }
     const stages = settings.mode === 'staged' ? buildAnswerStages(answer, settings.chunkSentences) : [];
     for (const stage of stages) {
+      if (runToken?.cancelled) return;
       applyProgrammatic(que, stage);
-      await answerStageDelay(1500);
+      await answerStageDelay(ANSWER_STAGE_DELAY_MS);
     }
     pushSnapshot(que, baseline);                  // baseline (usually empty) before the answer
-    for (const snapshot of buildAnswerSnapshots(answer)) pushSnapshot(que, snapshot);
-    applyProgrammatic(que, answer);               // show the full answer
+    const answerSnapshots = buildAnswerSnapshots(answer);
+    const fullMode = settings.mode !== 'staged';
+    const pauseWordCount = fullMode
+      ? ANSWER_PAUSE_MIN_WORDS + Math.floor(Math.random() * (ANSWER_PAUSE_MAX_WORDS - ANSWER_PAUSE_MIN_WORDS + 1))
+      : 0;
+    const pauseAt = fullMode ? answerWordCutoff(answer, pauseWordCount) : 0;
+    let randomPauseDone = false;
+    const typingBatchSize = fullMode ? 3 : 3;
+    for (let i = 0; i < answerSnapshots.length; i += 1) {
+      const snapshot = answerSnapshots[i];
+      if (runToken?.cancelled) return;
+      pushSnapshot(que, snapshot);
+      const isLastSnapshot = i === answerSnapshots.length - 1;
+      if (isLastSnapshot || (i + 1) % typingBatchSize === 0) {
+        applyProgrammatic(que, snapshot, { lightweight: true });
+        await answerTypingDelay(snapshot);
+        if (!randomPauseDone && pauseAt > 0 && i + 1 >= pauseAt && i + 1 < answerSnapshots.length) {
+          randomPauseDone = true;
+          await answerStageDelay(ANSWER_RANDOM_PAUSE_MS);
+        }
+      }
+    }
+    if (runToken?.cancelled) return;
+    applyProgrammatic(que, answer, { lightweight: true }); // keep the final frame in-place
     // Make the top snapshot match what the editor actually rendered, so redoing
     // to the full answer restores its real (possibly HTML) form.
     const st = ensureState(que);
@@ -820,8 +1012,28 @@
         return;
       }
       const metadata = { questionStructure: buildMeta(que, qtext) };
-      const answer = await window.clipkeyGetAnswer({ sentences, imageDatas, metadata });
+      let answer;
+      let streamed = false;
+      const deliverySettings = await getAnswerDeliverySettings();
+      if (!imageDatas.length && typeof window.clipkeyStartAnswerStream === 'function') {
+        const writer = beginAnswerStreamWriter(que, runToken, deliverySettings.mode);
+        const streamResult = await receiveStreamedAnswer(
+          { sentences, metadata },
+          (partial) => writer.append(partial)
+        );
+        if (streamResult?.fallback) {
+          answer = streamResult.answer;
+          streamed = false;
+        } else {
+          answer = streamResult;
+          if (!runToken.cancelled) answer = writer.finish();
+          streamed = true;
+        }
+      } else {
+        answer = await window.clipkeyGetAnswer({ sentences, imageDatas, metadata });
+      }
       console.log('[clipkey] answer trigger returned: chars=' + String(answer || '').length);
+      if (streamed) return;
       await writeAnswer(que, answer || '⚠ No answer returned');
     } catch (e) {
       console.warn('[clipkey] answer trigger error:', (e && (e.stack || e.message)) || String(e));
